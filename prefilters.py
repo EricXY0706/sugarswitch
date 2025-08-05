@@ -1,4 +1,4 @@
-from utils import FastaLoader, StructureLoader, InteractionCheck, ClashCheck, GlycanMover, BordaCount, SS_TAG
+from utils import FastaLoader, StructureLoader, MsaFileGenerator, InteractionCheck, ClashCheck, GlycanMover, BordaCount, SS_TAG
 from evc_utils import EVC_funcs
 from rosetta_utils import Rosetta_funcs
 from saprot_utils import SaProt_funcs
@@ -14,14 +14,19 @@ import warnings
 
 def update_infer(
         input_fasta_file: str,
+        output_dir: str,
 ) -> None:
     """
     Update the infer result dir with the input fasta file.
     """
     if not os.path.exists(input_fasta_file):
         raise FileNotFoundError(f"Input fasta file `{input_fasta_file}` not found.")
-    query_seq = FastaLoader.get_sequence(sequence_file=input_fasta_file)
+    msa = MsaFileGenerator()
+    with open(input_fasta_file, 'r') as f:
+        query = f.read()
+    msa.run_mmseqs2(x=query, prefix=f"{output_dir}/msa")
 
+    # TODO: Boltz prediction
 
 def run_prefilters(
         input_fasta_file: str,
@@ -33,10 +38,9 @@ def run_prefilters(
     Run prefilters on the input fasta file.
     """
     warnings.filterwarnings("ignore")
-    os.makedirs(output_dir, exist_ok=True)
     chain = basic_configs["protein_chain_id"]
     query_sequence = FastaLoader.get_sequence(sequence_file=input_fasta_file)
-    filename = Path(input_structure_file).name.split('.')[0]
+    filename = Path(input_fasta_file).name.split('.')[0]
     ss = StructureLoader.get_secondary_structure(structure_file=input_structure_file)
 
     # Filtering out interacting sites with the given hotspots
@@ -50,8 +54,9 @@ def run_prefilters(
     )
     
     # Filtering out the strong-coupling and conserved sites
-    evc = EVC_funcs(alignment_file=input_alignment_file, structure_file=input_structure_file, chain_id=chain, out_dir=f"{output_dir}/")
+    evc = EVC_funcs(alignment_file=input_alignment_file, structure_file=input_structure_file, chain_id=chain, out_dir=f"{output_dir}/evc/")
     evc.run_evc(
+        focus_sequence=filename,
         min_sequence_distance=basic_configs["evc_min_sequence_distance"],
         theta=basic_configs["evc_theta"],
         iterations=basic_configs["evc_num_iterations"],
@@ -89,7 +94,8 @@ def run_prefilters(
         sasa_value_next2 = round(sasa_index_dict[s+2], 3) if s != len(query_sequence) and s != (len(query_sequence) - 1) else 0.
         sasa_around_mean = round((sasa_value_before1 + sasa_value + sasa_value_next1) / 3, 3)
         sasa_next_mean = round((sasa_value + sasa_value_next1 + sasa_value_next2) / 3, 3)
-        glycoprotein_structure_file = f"{output_dir}/{filename}_{list(query_sequence)[s-1]}{s}N.pdb"
+        os.makedirs(f"{output_dir}/glycans/", exist_ok=True)
+        glycoprotein_structure_file = f"{output_dir}/glycans/{filename}_{list(query_sequence)[s-1]}{s}N.pdb"
 
         mut_score_s = saprot.mutation_score(
             sequence_file=input_fasta_file,
@@ -167,4 +173,4 @@ def run_prefilters(
                   "Mut_score", "Mut_score_S", "Mut_score_T", "Clash"]
     ranker = BordaCount(**ranker_configs)
     df = ranker.compute_score(df)
-    df.to_csv(f"{output_dir}/uricase.xy0804.csv", index=False)
+    df.to_csv(f"{output_dir}/{filename}_single_points.csv", index=False)

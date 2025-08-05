@@ -12,7 +12,7 @@ pipeline_configs = {
     "evc_lambda_h": 0.01,
     "evc_lambda_J": 0.01,
     "evc_num_cpu": 10,
-    "conservation_threshold": {"loop": 0.65, "ss": 0.55},
+    "conservation_threshold": {"loop": 0.65, "ss": 0.55}, # uricase: (0.65, 0.55)
     "evc_coupling_threshold": 0.5,
     "sasa_cutoff": 0.5,
     "bond_length_C1_ND2": 1.43,

@@ -2,6 +2,8 @@ import logging
 import os
 import time
 from typing import Set, List, Tuple
+from tqdm import tqdm
+import tarfile
 
 from Bio import SeqIO
 from Bio.PDB import PDBParser, MMCIFParser, PDBIO, Select, Structure, DSSP
@@ -152,11 +154,16 @@ class StructureFileEditor:
 class MsaFileGenerator:
     
     def __init__(self) -> None:
+        """
+        MSA file generator using ColabFold API.
+        Adopted from ColabFold: https://github.com/sokrypton/ColabFold
+        """
         self.username = "example_user"
         self.password = "example_password"
-        self.user_agent = ""
+        self.user_agent = "colabfold/1.5.5"
         self.host_url = "https://api.colabfold.com"
         self.email = ""
+        self.tqdm_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [elapsed: {elapsed} estimate remaining: {remaining}]"
 
     def _submit_to_mmseqs2_service(
         self,
@@ -256,13 +263,8 @@ class MsaFileGenerator:
                     raise e
                 continue
             break
-        try:
-            out = res.json()
-        except ValueError:
-            logger.warning(f"Server didn't reply with json: {res.text}")
-            out = {"status": "ERROR"}
-        
-        
+        with open(path, 'wb') as f:
+            f.write(res.content)
         
     def run_mmseqs2(
         self,
@@ -274,11 +276,73 @@ class MsaFileGenerator:
         filter = None,
         use_pairing = False,
         pairing_strategy = "greedy",
-        user_agent: str = "",
-        email: str = ""
     ):
-        pass
+        seqs = [x] if isinstance(x, str) else x
 
+        if filter is not None:
+            use_filter = filter
+        if use_filter:
+            mode = "env" if use_env else "all"
+        else:
+            mode = "env-nofilter" if use_env else "nofilter"
+        if use_pairing:
+            use_template = False
+            use_env = False
+            mode = ""
+            if pairing_strategy == "greedy":
+                mode = "pairgreedy"
+            elif pairing_strategy == "complete":
+                mode = "paircomplete"
+        os.makedirs(prefix, exist_ok=True)
+        tar_gz_file = f"{prefix}/out.tar.gz"
+        REDO = True
+        if not os.path.exists(tar_gz_file):
+            TIME_ESTIMATE = 100
+            with tqdm(total=TIME_ESTIMATE, bar_format=self.tqdm_bar_format) as pbar:
+                while REDO:
+                    pbar.set_description("SUBMIT")
+                    out = self._submit_to_mmseqs2_service(
+                        seq=seqs,
+                        mode=mode,
+                    )
+                    while out["status"] in ["UNKNOWN", "RATELIMIT"]:
+                        sleep_time = 60
+                        logger.error(f"MMSeqs service is not available. Retrying in {sleep_time} seconds ...")
+                        time.sleep(sleep_time)
+                        out = self._submit_to_mmseqs2_service(
+                            seq=seqs,
+                            mode=mode,
+                        )
+                    if out["status"] == "ERROR":
+                        raise Exception(f"MMSeqs API is giving errors. Please confirm your input is a valid protein sequence. If error persists, please try again an hour later.")
+                    if out["status"] == "MAINTENANCE":
+                        raise Exception(f"MMSeqs API is undergoing maintenance. Please try again later.")
+                    
+                    ID, TIME = out["id"], 0
+                    pbar.set_description(out["status"])
+                    while out["status"] in ["UNKNOWN", "RUNNING", "PENDING"]:
+                        t = 60
+                        logger.error(f"Sleeping for {t}s. Reason: {out['status']}")
+                        time.sleep(t)
+                        out = self._status(ID)
+                        pbar.set_description(out["status"])
+                        if out["status"] == "RUNNING":
+                            TIME += t
+                        pbar.n = min(99, int(100 * TIME / (30.0 * 60)))
+                        pbar.refresh()
+                    if out["status"] == "COMPLETE":
+                        pbar.n = 100
+                        pbar.refresh()
+                        REDO = False
+                    if out["status"] == "ERROR":
+                        REDO = False
+                        raise Exception(f"MMSeqs API is giving errors. Please confirm your input is a valid protein sequence. If error persists, please try again an hour later.")
+                self._download_from_mmseqs2_service(
+                    ID=ID,
+                    path=tar_gz_file,
+                )
+                with tarfile.open(tar_gz_file, 'r:gz') as tar:
+                    tar.extractall(os.path.dirname(tar_gz_file))
 
 class MsaFileEditor:
     

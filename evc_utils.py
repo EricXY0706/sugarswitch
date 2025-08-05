@@ -113,7 +113,7 @@ class EVC_funcs:
                         secondary_structure: dict,
                         conservation_thresholds: dict,
                         evc_threshold: float = 0.5,
-                        pic_format: str = "pdf") -> set:
+                        pic_format: str = "pdf"):
         '''
         Run filters
         '''
