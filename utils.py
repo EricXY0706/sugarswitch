@@ -343,6 +343,10 @@ class MsaFileGenerator:
                 )
                 with tarfile.open(tar_gz_file, 'r:gz') as tar:
                     tar.extractall(os.path.dirname(tar_gz_file))
+                lines = open(f"{prefix}/uniref.a3m", 'r').readlines()[:-1]
+                with open(f"{prefix}/uniref.a3m", 'w') as f:
+                    f.writelines(lines)
+
 
 class MsaFileEditor:
     

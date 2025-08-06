@@ -8,10 +8,6 @@ from utils import StructureLoader, StructureFileEditor
 from Bio.PDB import PDBIO
 from io import StringIO
 
-from Bio.PDB import Structure, Residue
-import numpy as np
-import sys
-
 class Rosetta_funcs:
 
     def __init__(self) -> None:

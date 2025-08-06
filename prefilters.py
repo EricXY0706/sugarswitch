@@ -10,7 +10,11 @@ from tqdm import *
 import pandas as pd
 import numpy as np
 import os
+import subprocess
+import yaml
 import warnings
+
+SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 
 def update_infer(
         input_fasta_file: str,
@@ -21,12 +25,38 @@ def update_infer(
     """
     if not os.path.exists(input_fasta_file):
         raise FileNotFoundError(f"Input fasta file `{input_fasta_file}` not found.")
+    filename = Path(input_fasta_file).name.split('.')[0]
     msa = MsaFileGenerator()
     with open(input_fasta_file, 'r') as f:
         query = f.read()
     msa.run_mmseqs2(x=query, prefix=f"{output_dir}/msa")
-
-    # TODO: Boltz prediction
+    
+    # Boltz prediction
+    with open(f"{output_dir}/{filename}.yaml", 'w') as f:
+        yaml.dump({
+            "version": 1,
+            "sequences": [
+                {
+                    "protein": {
+                        "id": "A",
+                        "sequence": FastaLoader.get_sequence(sequence_file=input_fasta_file),
+                        "msa": f"{output_dir}/msa/uniref.a3m",
+                    }
+                }
+            ]
+        }, f, sort_keys=False, indent=2)
+    
+    cmd = [
+        "boltz", "predict", f"{output_dir}/{filename}.yaml",
+        "--cache", f"{SCRIPT_PATH}/boltz_ckpt",
+        "--output_format", "pdb",
+        "--out_dir", output_dir,
+    ]
+    '''
+    boltz predict /sddn/yyf_work/sugarswitch/GH/GH.yaml --cache /sddn/yyf_work/sugarswitch/scripts_filter/boltz_ckpt --output_format pdb --out_dir /sddn/yyf_work/sugarswitch/GH
+    '''
+    subprocess.run(cmd, check=True)
+    
 
 def run_prefilters(
         input_fasta_file: str,
