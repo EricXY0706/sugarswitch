@@ -4,7 +4,7 @@ from pyrosetta import init, Pose
 import pyrosetta.rosetta.core.import_pose as ip
 from pyrosetta.toolbox.mutants import mutate_residue
 
-from utils import StructureLoader, StructureFileEditor
+from util import StructureLoader, StructureFileEditor
 from Bio.PDB import PDBIO
 from io import StringIO
 

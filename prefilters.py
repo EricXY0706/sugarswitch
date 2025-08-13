@@ -1,4 +1,4 @@
-from utils import FastaLoader, StructureLoader, MsaFileGenerator, InteractionCheck, ClashCheck, GlycanMover, BordaCount, SS_TAG
+from util import FastaLoader, StructureLoader, MsaFileGenerator, InteractionCheck, ClashCheck, GlycanMover, BordaCount, SS_TAG
 from evc_utils import EVC_funcs
 from rosetta_utils import Rosetta_funcs
 from saprot_utils import SaProt_funcs
@@ -52,11 +52,10 @@ def update_infer(
         "--output_format", "pdb",
         "--out_dir", output_dir,
     ]
-    '''
-    boltz predict /sddn/yyf_work/sugarswitch/GH/GH.yaml --cache /sddn/yyf_work/sugarswitch/scripts_filter/boltz_ckpt --output_format pdb --out_dir /sddn/yyf_work/sugarswitch/GH
-    '''
     subprocess.run(cmd, check=True)
-    
+    subprocess.run(f"mv {output_dir}/boltz_results_{filename}/predictions/{filename}/{filename}_model_0.pdb {output_dir}/{filename}.pdb", shell=True)
+    subprocess.run(f"rm -r {output_dir}/boltz_results_{filename}", shell=True)
+    subprocess.run(f"rm -f {output_dir}/{filename}.yaml", shell=True)
 
 def run_prefilters(
         input_fasta_file: str,
@@ -153,11 +152,11 @@ def run_prefilters(
         ddG_next2_S, dTm_next2_S = spired.get_mutation_effect(
             wt_seq=query_sequence,
             mutations={s: "N", s+2: "S"},
-        ) if s != len(query_sequence) and s != (len(query_sequence) - 1) else None
+        ) if s != len(query_sequence) and s != (len(query_sequence) - 1) else None, None
         ddG_next2_T, dTm_next2_T = spired.get_mutation_effect(
             wt_seq=query_sequence,
             mutations={s: "N", s+2: "S"},
-        ) if s != len(query_sequence) and s != (len(query_sequence) - 1) else None
+        ) if s != len(query_sequence) and s != (len(query_sequence) - 1) else None, None
         
         rosetta.mutate(
             structure_file=input_structure_file,

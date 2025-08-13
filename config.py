@@ -1,7 +1,9 @@
 user_configs = {
     "protein_chain_id": "A",
-    "functional_hotspots": [58,160,177,229],
+    "functional_hotspots": [155,156,158,159,161,164,165], 
 }
+# uricase: [58,160,177,229]
+# FTL: [155,156,158,159,161,164,165]
 
 pipeline_configs = {
     "Cb_interaction_threshold": 6.0,

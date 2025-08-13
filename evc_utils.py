@@ -10,7 +10,7 @@ from evcouplings.couplings.mapping import Segment
 from evcouplings.align.protocol import describe_frequencies
 from evcouplings.couplings.protocol import run
 
-from utils import InteractionCheck, SS_TAG, AA_INTERACTIONS
+from util import InteractionCheck, SS_TAG, AA_INTERACTIONS
 
 class EVC_funcs:
 

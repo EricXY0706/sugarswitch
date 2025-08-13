@@ -1,4 +1,4 @@
-from SaProt.util.foldseek_util import get_struc_seq
+from SaProt.utils.foldseek_util import get_struc_seq
 from SaProt.model.saprot.saprot_foldseek_mutation_model import SaprotFoldseekMutationModel
 from Bio import SeqIO
 import torch
