@@ -132,31 +132,37 @@ def run_prefilters(
             chain_id=chain,
             mutations={s: "N"},
         )
-        mut_score_s_next2_S = saprot.mutation_score(
-            sequence_file=input_fasta_file,
-            structure_file=input_structure_file,
-            chain_id=chain,
-            mutations={s: "N", s+2: "S"},
-        ) if s != len(query_sequence) and s != (len(query_sequence) - 1) else None
-        mut_score_s_next2_T = saprot.mutation_score(
-            sequence_file=input_fasta_file,
-            structure_file=input_structure_file,
-            chain_id=chain,
-            mutations={s: "N", s+2: "T"},
-        ) if s != len(query_sequence) and s != (len(query_sequence) - 1) else None
+        if s != len(query_sequence) and s != (len(query_sequence) - 1):
+            mut_score_s_next2_S = saprot.mutation_score(
+                sequence_file=input_fasta_file,
+                structure_file=input_structure_file,
+                chain_id=chain,
+                mutations={s: "N", s+2: "S"},
+            )
+            mut_score_s_next2_T = saprot.mutation_score(
+                sequence_file=input_fasta_file,
+                structure_file=input_structure_file,
+                chain_id=chain,
+                mutations={s: "N", s+2: "T"},
+            )
+        else:
+            mut_score_s_next2_S, mut_score_s_next2_T = mut_score_s, mut_score_s
 
         ddG_s, dTm_s = spired.get_mutation_effect(
             wt_seq=query_sequence,
             mutations={s: "N"},
         )
-        ddG_next2_S, dTm_next2_S = spired.get_mutation_effect(
-            wt_seq=query_sequence,
-            mutations={s: "N", s+2: "S"},
-        ) if s != len(query_sequence) and s != (len(query_sequence) - 1) else None, None
-        ddG_next2_T, dTm_next2_T = spired.get_mutation_effect(
-            wt_seq=query_sequence,
-            mutations={s: "N", s+2: "S"},
-        ) if s != len(query_sequence) and s != (len(query_sequence) - 1) else None, None
+        if s != len(query_sequence) and s != (len(query_sequence) - 1):
+            ddG_next2_S, dTm_next2_S = spired.get_mutation_effect(
+                wt_seq=query_sequence,
+                mutations={s: "N", s+2: "S"},
+            )
+            ddG_next2_T, dTm_next2_T = spired.get_mutation_effect(
+                wt_seq=query_sequence,
+                mutations={s: "N", s+2: "T"},
+            )
+        else:
+            ddG_next2_S, dTm_next2_S, ddG_next2_T, dTm_next2_T = ddG_s, dTm_s, ddG_s, dTm_s
         
         rosetta.mutate(
             structure_file=input_structure_file,

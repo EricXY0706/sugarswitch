@@ -15,6 +15,8 @@ from math import degrees
 import requests
 from requests.auth import HTTPBasicAuth
 
+from config import basic_configs
+
 SS_TAG = {
     "-": ["loop", "loop"], 
     "S": ["bend", "loop"],

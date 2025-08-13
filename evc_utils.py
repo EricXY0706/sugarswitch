@@ -155,7 +155,7 @@ class EVC_funcs:
                 for c in coupling_sites_s & cb_interactions:
                     for interaction_type, interaction_aa in AA_INTERACTIONS.items():
                         if self.query_seq[s-1] in interaction_aa and self.query_seq[c-1] in interaction_aa:
-                            if ((SS_TAG[secondary_structure[(self.chain, s)]][-1], SS_TAG[secondary_structure[(self.chain, c)]][-1]) not in [("helix", "helix"), ("sheet", "sheet")]) or coupling_strength[s-1][c-1] >= 0.8:
+                            if ((SS_TAG[secondary_structure[(self.chain, s)]][-1], SS_TAG[secondary_structure[(self.chain, c)]][-1]) not in [("helix", "helix"), ("sheet", "sheet")]) or abs(coupling_strength[s-1][c-1]) >= 0.8:
                                 remove_s = False
             if not remove_s:
                 strong_coupling_sites.add(s)
