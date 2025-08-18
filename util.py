@@ -152,6 +152,14 @@ class StructureFileEditor:
         
         # Save to file
         pose.dump_pdb(filename)
+    
+    @staticmethod
+    def write_score_as_bfactor(pose, structure_file, df_file, seq_length):
+        
+        df = pd.read_csv(df_file)
+        sites = df["Site"].tolist()
+        data = [(1, i+1, df.loc[df["Site"] == i+1, "Borda_score"].values[0] * 100 if (i+1) in sites else 0.) for i in range(seq_length)]
+        StructureFileEditor.write_bfactor(pose, data, structure_file)
 
 class MsaFileGenerator:
     
@@ -798,9 +806,18 @@ class InteractionCheck:
         structure, _ = StructureLoader.load_structure(structure_file)
         coords_cb, res_ids = self._extract_cb(structure=structure)
         contact = self._compute_contact_map(coords=coords_cb)
+        
+        pts = []
+        for pt in positions:
+            if isinstance(pt, int):
+                pts.append(pt)
+            elif isinstance(pt, str) and "-" in pt:
+                start, end = int(pt.split("-")[0]), int(pt.split("-")[1])
+                for p in range(start, end+1):
+                    pts.append(p)
 
         interacting_aas = []
-        for p in positions:
+        for p in pts:
             if p not in res_ids:
                 continue
             p_idx = res_ids.index(p)
@@ -811,15 +828,15 @@ class InteractionCheck:
 
         if is_self_included:
             return set(interacting_aas) | set(
-                [p + i for p in positions for i in range(num_neighbors) if (p + i) <= res_ids[-1]]
+                [p + i for p in pts for i in range(num_neighbors) if (p + i) <= res_ids[-1]]
             ) | set(
-                [p - i for p in positions for i in range(num_neighbors) if (p - i) > 0]
+                [p - i for p in pts for i in range(num_neighbors) if (p - i) > 0]
             )
         else:
-            return set(interacting_aas) - set(positions) - set(
-                [p + i for p in positions for i in range(num_neighbors) if (p + i) <= res_ids[-1]]
+            return set(interacting_aas) - set(pts) - set(
+                [p + i for p in pts for i in range(num_neighbors) if (p + i) <= res_ids[-1]]
             ) - set(
-                [p - i for p in positions for i in range(num_neighbors) if (p - i) > 0]
+                [p - i for p in pts for i in range(num_neighbors) if (p - i) > 0]
             )
 
 class ClashCheck:

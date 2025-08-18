@@ -16,6 +16,5 @@ SaProt/weights/PLMs/vocab.txt
 SaProt/foldseek/foldseek
 Spired/model/SPIRED-Fitness.pth
 Spired/model/SPIRED-Stab.pth
-test.ipynb
 test.py
 *.out

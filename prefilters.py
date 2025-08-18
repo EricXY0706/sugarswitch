@@ -1,10 +1,20 @@
-from util import FastaLoader, StructureLoader, MsaFileGenerator, InteractionCheck, ClashCheck, GlycanMover, BordaCount, SS_TAG
 from evc_utils import EVC_funcs
 from rosetta_utils import Rosetta_funcs
 from saprot_utils import SaProt_funcs
 from spired_utils import Spired_funcs
 
+from util import (FastaLoader, 
+                  StructureLoader, 
+                  StructureFileEditor, 
+                  MsaFileGenerator, 
+                  InteractionCheck, 
+                  ClashCheck, 
+                  GlycanMover, 
+                  BordaCount, 
+                  SS_TAG
+                  )
 from config import basic_configs, ranker_configs
+
 from pathlib import Path
 from tqdm import *
 import pandas as pd
@@ -209,3 +219,11 @@ def run_prefilters(
     ranker = BordaCount(**ranker_configs)
     df = ranker.compute_score(df)
     df.to_csv(f"{output_dir}/{filename}_single_points.csv", index=False)
+    pose = Rosetta_funcs.get_pose(f"{output_dir}/{filename}.pdb")
+    StructureFileEditor.write_score_as_bfactor(
+        pose=pose,
+        structure_file=f"{output_dir}/{filename}.pdb",
+        df_file=f"{output_dir}/{filename}_single_points.csv",
+        seq_length=len(query_sequence),
+    )
+    

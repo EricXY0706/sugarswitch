@@ -15,8 +15,9 @@ class Rosetta_funcs:
 
     def initiation(self) -> None:
         init("-mute all")
-
-    def get_pose(self, structure_file: str) -> Pose:
+    
+    @staticmethod
+    def get_pose(structure_file: str) -> Pose:
         '''
         
         '''
