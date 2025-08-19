@@ -111,14 +111,14 @@ def run_prefilters(
     
     # Filtering out the low SASA sites
     rosetta = Rosetta_funcs()
-    _, low_sasa_sites, sasa_index_dict = rosetta.get_SASA(
+    sasa_cutoff, low_sasa_sites, sasa_index_dict = rosetta.get_SASA(
         structure_file=input_structure_file,
         cutoff=basic_configs["sasa_cutoff"],
     )
 
     non_editable_regions = hotspots_interacting_sites | conserverd_coupling_sites | low_sasa_sites
     editable_regions = set(list(range(1, len(query_sequence)+1))) - non_editable_regions
-
+    
     # Modification pipeline
     results = []
     saprot = SaProt_funcs()

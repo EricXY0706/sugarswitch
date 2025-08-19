@@ -828,15 +828,15 @@ class InteractionCheck:
 
         if is_self_included:
             return set(interacting_aas) | set(
-                [p + i for p in pts for i in range(num_neighbors) if (p + i) <= res_ids[-1]]
+                [p + i for p in pts for i in range(1, num_neighbors + 1) if (p + i) <= res_ids[-1]]
             ) | set(
-                [p - i for p in pts for i in range(num_neighbors) if (p - i) > 0]
+                [p - i for p in pts for i in range(1, num_neighbors + 1) if (p - i) > 0]
             )
         else:
             return set(interacting_aas) - set(pts) - set(
-                [p + i for p in pts for i in range(num_neighbors) if (p + i) <= res_ids[-1]]
+                [p + i for p in pts for i in range(1, num_neighbors + 1) if (p + i) <= res_ids[-1]]
             ) - set(
-                [p - i for p in pts for i in range(num_neighbors) if (p - i) > 0]
+                [p - i for p in pts for i in range(1, num_neighbors + 1) if (p - i) > 0]
             )
 
 class ClashCheck:

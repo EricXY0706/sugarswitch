@@ -14,10 +14,10 @@ def prefilter(input, out_dir):
 
     os.makedirs(out_dir, exist_ok=True)
 
-    update_infer(
-        input_fasta_file=input,
-        output_dir=out_dir,
-    )
+    # update_infer(
+    #     input_fasta_file=input,
+    #     output_dir=out_dir,
+    # )
 
     run_prefilters(
         input_fasta_file=input,

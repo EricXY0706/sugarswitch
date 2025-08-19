@@ -1,27 +1,27 @@
 user_configs = {
     "protein_chain_id": "A",
-    "functional_hotspots": [1], # e.g. [1,2,3,"4-10"]
+    "functional_hotspots": [29,37,98,"101-105"], # e.g. [1,2,3,"4-10"]
 }
 # URIC: [58,160,177,229]
 # FTL: [155,156,158,159,161,164,165]
 # GH: [1,4,8,116,120,41,45,64,172,175,178], 26
 # IL2: [42,44,45,65,72,61,62,35,38,43,20,16,19,84,88,91,126,15,123,129,12,19], 20
-# NB1: [27,29,30,32,53,54,57,74,100,103,104,106]
-# NB2: ["51-58","97-105","26-34"]
+# NB1: [30,32,53,54,57,74,100,103,104,106]
+# NB2: ["51-55","97-103","30-34"]
 # NB3: [29,37,98,"101-105"]
 
 pipeline_configs = {
     "Cb_interaction_threshold": 6.0,
-    "num_neighbors_to_shield": 3,
+    "num_neighbors_to_shield": 3, # NB1: 2
     "evc_min_sequence_distance": 6,
     "evc_theta": 0.8,
     "evc_num_iterations": 100,
     "evc_lambda_h": 0.01,
     "evc_lambda_J": 0.01,
     "evc_num_cpu": 10,
-    "conservation_threshold": {"loop": 0.7, "ss": 0.6}, # uricase: (0.65, 0.55)
+    "conservation_threshold": {"loop": 0.8, "ss": 0.43}, # uricase: (0.65, 0.55), NB1: (0.83, 0.45), NB2: (0.8, 0.41), NB3: (0.8, 0.43)
     "evc_coupling_threshold": 0.5,
-    "sasa_cutoff": 0.5,
+    "sasa_cutoff": 0.5, # NB1: 0.4
     "bond_length_C1_ND2": 1.43,
     "angle_C1_ND2_CG": 120.0,
     "angle_C2_C1_ND2": 109.5,
