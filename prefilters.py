@@ -19,6 +19,7 @@ from pathlib import Path
 from tqdm import *
 import pandas as pd
 import numpy as np
+from Bio import SeqIO
 import os
 import subprocess
 import yaml
@@ -93,22 +94,27 @@ def run_prefilters(
     )
     
     # Filtering out the strong-coupling and conserved sites
-    evc = EVC_funcs(alignment_file=input_alignment_file, structure_file=input_structure_file, chain_id=chain, out_dir=f"{output_dir}/evc/")
-    evc.run_evc(
-        focus_sequence=filename,
-        min_sequence_distance=basic_configs["evc_min_sequence_distance"],
-        theta=basic_configs["evc_theta"],
-        iterations=basic_configs["evc_num_iterations"],
-        lambda_h=basic_configs["evc_lambda_h"],
-        lambda_J=basic_configs["evc_lambda_J"],
-        cpu=basic_configs["evc_num_cpu"],
-    )
-    conserverd_coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
-        secondary_structure=ss,
-        conservation_thresholds=basic_configs["conservation_threshold"],
-        evc_threshold=basic_configs["evc_coupling_threshold"],
-    )
-    
+    skip_evc = False
+    if len(list(SeqIO.parse(input_alignment_file, "fasta"))) != 1:
+        evc = EVC_funcs(alignment_file=input_alignment_file, structure_file=input_structure_file, chain_id=chain, out_dir=f"{output_dir}/evc/")
+        evc.run_evc(
+            focus_sequence=filename,
+            min_sequence_distance=basic_configs["evc_min_sequence_distance"],
+            theta=basic_configs["evc_theta"],
+            iterations=basic_configs["evc_num_iterations"],
+            lambda_h=basic_configs["evc_lambda_h"],
+            lambda_J=basic_configs["evc_lambda_J"],
+            cpu=basic_configs["evc_num_cpu"],
+        )
+        conserverd_coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
+            secondary_structure=ss,
+            conservation_thresholds=basic_configs["conservation_threshold"],
+            evc_threshold=basic_configs["evc_coupling_threshold"],
+        )
+    else:
+        skip_evc = True
+        conserverd_coupling_sites = set()
+
     # Filtering out the low SASA sites
     rosetta = Rosetta_funcs()
     sasa_cutoff, low_sasa_sites, sasa_index_dict = rosetta.get_SASA(
@@ -118,15 +124,22 @@ def run_prefilters(
 
     non_editable_regions = hotspots_interacting_sites | conserverd_coupling_sites | low_sasa_sites
     editable_regions = set(list(range(1, len(query_sequence)+1))) - non_editable_regions
-    
+    # print(hotspots_interacting_sites)
+    # print(conserverd_coupling_sites)
+    # print(low_sasa_sites)
+    # print(editable_regions)
     # Modification pipeline
     results = []
     saprot = SaProt_funcs()
     spired = Spired_funcs()
+    
     for s in tqdm(editable_regions, dynamic_ncols=True):
-
-        conservation_score = conservation_df.loc[conservation_df["i"] == s, "conservation"].values[0]
-        coupling_score = round(coupling_stength[s-1], 3)
+        
+        if not skip_evc:
+            conservation_score = conservation_df.loc[conservation_df["i"] == s, "conservation"].values[0]
+            coupling_score = round(coupling_stength[s-1], 3)
+        else:
+            conservation_score, coupling_score = 0., 0.
         sasa_value = round(sasa_index_dict[s], 3)
         sasa_value_before1 = round(sasa_index_dict[s-1], 3) if s != 1 else 0.
         sasa_value_next1 = round(sasa_index_dict[s+1], 3) if s != len(query_sequence) else 0.
@@ -212,10 +225,10 @@ def run_prefilters(
                         mut_score_s, mut_score_s_next2_S, mut_score_s_next2_T, clash_residues])
 
     df = pd.DataFrame(results)
-    df.columns = ["Site", "SS", "Mutation", "Conservation_score", "Coupling_score", 
-                  "SASA", "SASA_next1", "SASA_next2", "SASA_around_mean", "SASA_next_mean", 
-                  "ddG", "dTm", "ddG_S", "dTm_S", "ddG_T", "dTm_T", 
-                  "Mut_score", "Mut_score_S", "Mut_score_T", "Clash"]
+    df.columns = ["BordaScore", "Site", "SS", "Mutation", "ConservationScore", "CouplingScore",
+                  "SASA_i", "SASA_i+1", "SASA_i+2", "SASA_(i-1:i+1)", "SASA_(i:i+2)",
+                  "ddG", "dTm", "ddG_NXS", "dTm_NXS", "ddG_NXT", "dTm_NXT", 
+                  "MutScore", "MutScore_NXS", "MutScore_NXT", "Clash"]
     ranker = BordaCount(**ranker_configs)
     df = ranker.compute_score(df)
     df.to_csv(f"{output_dir}/{filename}_single_points.csv", index=False)
