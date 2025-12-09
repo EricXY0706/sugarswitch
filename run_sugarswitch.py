@@ -1,4 +1,4 @@
-from prefilters import update_infer, run_prefilters
+from src.prefilters import update_infer, run_prefilters
 from pathlib import Path
 import click
 import os
