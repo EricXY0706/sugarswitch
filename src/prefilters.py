@@ -85,7 +85,7 @@ def run_prefilters(
         if chain in seq_chain_id:
             aln_file_id = i + 1
 
-    filename = Path(input_fasta_file).name.split('.')[0]
+    filename = Path(input_fasta_file).name.split(".")[0]
     ss = StructureLoader.get_secondary_structure(structure_file=input_structure_file, chain_id=chain)
 
     # Filtering out interacting sites with the given hotspots
