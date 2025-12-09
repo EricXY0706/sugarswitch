@@ -136,12 +136,6 @@ def run_prefilters(
 
     non_editable_regions = interchain_interacting_sites | hotspots_interacting_sites | conserverd_coupling_sites | low_sasa_sites
     editable_regions = set(list(range(1, len(query_sequence)+1))) - non_editable_regions
-
-    print(interchain_interacting_sites)
-    print(hotspots_interacting_sites)
-    print(conserverd_coupling_sites)
-    print(low_sasa_sites)
-    print(editable_regions)
     
     # Modification pipeline
     results = []
