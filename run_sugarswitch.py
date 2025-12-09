@@ -14,15 +14,14 @@ def prefilter(input, out_dir):
 
     os.makedirs(out_dir, exist_ok=True)
 
-    update_infer(
-        input_fasta_file=input,
-        output_dir=out_dir,
-    )
+    # update_infer(
+    #     input_fasta_file=input,
+    #     output_dir=out_dir,
+    # )
 
     run_prefilters(
         input_fasta_file=input,
         input_structure_file=f"{out_dir}/{Path(input).name.split('.')[0]}.pdb",
-        input_alignment_file=f"{out_dir}/msa/uniref.a3m",
         output_dir=out_dir
     )
 

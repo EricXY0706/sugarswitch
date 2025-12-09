@@ -3,16 +3,7 @@ from rosetta_utils import Rosetta_funcs
 from saprot_utils import SaProt_funcs
 from spired_utils import Spired_funcs
 
-from util import (FastaLoader, 
-                  StructureLoader, 
-                  StructureFileEditor, 
-                  MsaFileGenerator, 
-                  InteractionCheck, 
-                  ClashCheck, 
-                  GlycanMover, 
-                  BordaCount, 
-                  SS_TAG
-                  )
+from util import *
 from config import basic_configs, ranker_configs
 
 from pathlib import Path
@@ -37,25 +28,28 @@ def update_infer(
     if not os.path.exists(input_fasta_file):
         raise FileNotFoundError(f"Input fasta file `{input_fasta_file}` not found.")
     filename = Path(input_fasta_file).name.split('.')[0]
-    msa = MsaFileGenerator()
+    msa = MsaFileGenerator(input_fasta_file=input_fasta_file)
     with open(input_fasta_file, 'r') as f:
         query = f.read()
     msa.run_mmseqs2(x=query, prefix=f"{output_dir}/msa")
     
     # Boltz prediction
-    with open(f"{output_dir}/{filename}.yaml", 'w') as f:
-        yaml.dump({
-            "version": 1,
-            "sequences": [
-                {
-                    "protein": {
-                        "id": "A",
-                        "sequence": FastaLoader.get_sequence(sequence_file=input_fasta_file),
-                        "msa": f"{output_dir}/msa/uniref.a3m",
-                    }
-                }
-            ]
-        }, f, sort_keys=False, indent=2)
+    seqs = {rec.id: (str(rec.seq), int(rec.description.split(" ")[-1].split(":")[-1])) for rec in SeqIO.parse(input_fasta_file, "fasta")}
+    chain_ptr = 0
+    out = []
+    for name, (seq, num) in seqs.items():
+        ids = FlowList(CHAIN_IDS[chain_ptr : chain_ptr + num])
+        out.append({
+            "protein": {
+                "id": ids,
+                "sequence": seq,
+                "msa": f"{output_dir}/msa/uniref_{len(out)+1}.a3m",
+            }
+        })
+        chain_ptr += num
+
+    with open(f"{output_dir}/{filename}.yaml", "w") as f:
+        yaml.safe_dump({"version": 1, "sequences": out}, f, sort_keys=False, indent=2)
     
     cmd = [
         "boltz", "predict", f"{output_dir}/{filename}.yaml",
@@ -71,7 +65,6 @@ def update_infer(
 def run_prefilters(
         input_fasta_file: str,
         input_structure_file: str,
-        input_alignment_file: str,
         output_dir: str,
 ) -> None:
     """
@@ -79,14 +72,31 @@ def run_prefilters(
     """
     warnings.filterwarnings("ignore")
     chain = basic_configs["protein_chain_id"]
-    query_sequence = FastaLoader.get_sequence(sequence_file=input_fasta_file)
+    query_sequence = FastaLoader.get_sequence(sequence_file=input_fasta_file, chain_id=chain)
+    chains_nums = [int(rec.description.split(" ")[-1].split(":")[-1]) for rec in SeqIO.parse(input_fasta_file, "fasta")]
+    chains_nums.append(len(CHAIN_IDS) - sum(chains_nums))
+    seq_chain_ids = []
+    pos = 0
+    aln_file_id = 1
+    for i, l in enumerate(chains_nums):
+        seq_chain_id = "".join(CHAIN_IDS[pos: pos + l])
+        seq_chain_ids.append(seq_chain_id)
+        pos += l
+        if chain in seq_chain_id:
+            aln_file_id = i + 1
+
     filename = Path(input_fasta_file).name.split('.')[0]
-    ss = StructureLoader.get_secondary_structure(structure_file=input_structure_file)
+    ss = StructureLoader.get_secondary_structure(structure_file=input_structure_file, chain_id=chain)
 
     # Filtering out interacting sites with the given hotspots
     interaction_checker = InteractionCheck()
-    hotspots_interacting_sites = interaction_checker.get_interaction_aa(
+    interchain_interacting_sites = interaction_checker.get_inter_interaction_aa(
         structure_file=input_structure_file,
+        chain_id=chain,
+    )
+    hotspots_interacting_sites = interaction_checker.get_intra_interaction_aa(
+        structure_file=input_structure_file,
+        chain_id=chain,
         positions=basic_configs["functional_hotspots"],
         dist_threshold=basic_configs["Cb_interaction_threshold"],
         is_self_included=True,
@@ -95,6 +105,7 @@ def run_prefilters(
     
     # Filtering out the strong-coupling and conserved sites
     skip_evc = False
+    input_alignment_file = f"{output_dir}/msa/uniref_{aln_file_id}.a3m"
     if len(list(SeqIO.parse(input_alignment_file, "fasta"))) != 1:
         evc = EVC_funcs(alignment_file=input_alignment_file, structure_file=input_structure_file, chain_id=chain, out_dir=f"{output_dir}/evc/")
         evc.run_evc(
@@ -120,18 +131,24 @@ def run_prefilters(
     sasa_cutoff, low_sasa_sites, sasa_index_dict = rosetta.get_SASA(
         structure_file=input_structure_file,
         cutoff=basic_configs["sasa_cutoff"],
+        chain=chain,
     )
 
-    non_editable_regions = hotspots_interacting_sites | conserverd_coupling_sites | low_sasa_sites
+    non_editable_regions = interchain_interacting_sites | hotspots_interacting_sites | conserverd_coupling_sites | low_sasa_sites
     editable_regions = set(list(range(1, len(query_sequence)+1))) - non_editable_regions
-    # print(hotspots_interacting_sites)
-    # print(conserverd_coupling_sites)
-    # print(low_sasa_sites)
-    # print(editable_regions)
+
+    print(interchain_interacting_sites)
+    print(hotspots_interacting_sites)
+    print(conserverd_coupling_sites)
+    print(low_sasa_sites)
+    print(editable_regions)
+    
     # Modification pipeline
     results = []
     saprot = SaProt_funcs()
     spired = Spired_funcs()
+
+    editable_regions = {4, 5}
     
     for s in tqdm(editable_regions, dynamic_ncols=True):
         
@@ -150,20 +167,20 @@ def run_prefilters(
         glycoprotein_structure_file = f"{output_dir}/glycans/{filename}_{list(query_sequence)[s-1]}{s}N.pdb"
 
         mut_score_s = saprot.mutation_score(
-            sequence_file=input_fasta_file,
+            query_seq=query_sequence,
             structure_file=input_structure_file,
             chain_id=chain,
             mutations={s: "N"},
         )
         if s != len(query_sequence) and s != (len(query_sequence) - 1):
             mut_score_s_next2_S = saprot.mutation_score(
-                sequence_file=input_fasta_file,
+                query_seq=query_sequence,
                 structure_file=input_structure_file,
                 chain_id=chain,
                 mutations={s: "N", s+2: "S"},
             )
             mut_score_s_next2_T = saprot.mutation_score(
-                sequence_file=input_fasta_file,
+                query_seq=query_sequence,
                 structure_file=input_structure_file,
                 chain_id=chain,
                 mutations={s: "N", s+2: "T"},
@@ -190,10 +207,11 @@ def run_prefilters(
         rosetta.mutate(
             structure_file=input_structure_file,
             output_file=glycoprotein_structure_file,
+            chain_id=chain,
             mutate_position=s,
             mutation="N",
         )
-        ss_dict = StructureLoader.get_secondary_structure(structure_file=glycoprotein_structure_file)
+        ss_dict = StructureLoader.get_secondary_structure(structure_file=glycoprotein_structure_file, chain_id=chain)
         ss_site = SS_TAG[ss_dict[(chain, s)]][-1]
         
         glycan_mover = GlycanMover(
@@ -225,7 +243,7 @@ def run_prefilters(
                         mut_score_s, mut_score_s_next2_S, mut_score_s_next2_T, clash_residues])
 
     df = pd.DataFrame(results)
-    df.columns = ["BordaScore", "Site", "SS", "Mutation", "ConservationScore", "CouplingScore",
+    df.columns = ["Site", "SS", "Mutation", "ConservationScore", "CouplingScore",
                   "SASA_i", "SASA_i+1", "SASA_i+2", "SASA_(i-1:i+1)", "SASA_(i:i+2)",
                   "ddG", "dTm", "ddG_NXS", "dTm_NXS", "ddG_NXT", "dTm_NXT", 
                   "MutScore", "MutScore_NXS", "MutScore_NXT", "Clash"]
@@ -236,7 +254,10 @@ def run_prefilters(
     StructureFileEditor.write_score_as_bfactor(
         pose=pose,
         structure_file=f"{output_dir}/{filename}.pdb",
+        chain_id=chain,
         df_file=f"{output_dir}/{filename}_single_points.csv",
-        seq_length=len(query_sequence),
     )
-    
+    plot_heatmap(
+        df_file=f"{output_dir}/{filename}_single_points.csv",
+        out_file=f"{output_dir}/{filename}_single_points_heatmap.pdf",
+    )

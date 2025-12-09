@@ -146,8 +146,9 @@ class EVC_funcs:
             remove_s = True
             coupling_sites_s = set((np.flatnonzero(coupling[s-1] != 0) + 1).tolist())
             interaction_checker = InteractionCheck()
-            cb_interactions = interaction_checker.get_interaction_aa(
+            cb_interactions = interaction_checker.get_intra_interaction_aa(
                             structure_file=self.struct_file,
+                            chain_id=self.chain,
                             positions=[s],
                             is_self_included=False,
                             )

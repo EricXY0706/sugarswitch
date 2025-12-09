@@ -1,16 +1,23 @@
 import logging
 import os
+import re
 import time
 from typing import Set, List, Tuple
 from tqdm import tqdm
 import tarfile
+import yaml
 
 from Bio import SeqIO
 from Bio.PDB import PDBParser, MMCIFParser, PDBIO, Select, Structure, DSSP
-
 import pandas as pd
 import numpy as np
 from math import degrees
+from collections import defaultdict
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import seaborn as sns
+from sklearn.preprocessing import MinMaxScaler
+from pathlib import Path
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -34,13 +41,36 @@ AA_INTERACTIONS = {
     "Hydrophobic": ["A", "V", "I", "L", "M", "F", "W", "Y"],
 
 }
+
+CHAIN_IDS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
 logger = logging.getLogger(__name__)
+
+class FlowList(list):
+    pass
+
+def flow_list_representer(dumper, data):
+    return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
+
+yaml.add_representer(FlowList, flow_list_representer, Dumper=yaml.SafeDumper)
 
 class FastaLoader:
 
     @staticmethod
-    def get_sequence(sequence_file):
-        return str(next(SeqIO.parse(sequence_file, "fasta")).seq)
+    def get_sequence(sequence_file, chain_id):
+
+        chain_id = CHAIN_IDS.index(chain_id) + 1
+        seqs = {rec.id: (str(rec.seq), int(rec.description.split(" ")[-1].split(":")[-1])) for rec in SeqIO.parse(sequence_file, "fasta")}
+        s = None
+        total_num = 0
+        for k, (seq, num) in seqs.items():
+            total_num += num
+            if total_num < chain_id:
+                continue
+            else:
+                s = seq
+                break
+        return s
         
 class StructureLoader:
     
@@ -71,6 +101,17 @@ class StructureLoader:
             structure = parser.get_structure("structure", structure_file)
 
         return structure, structure_file
+    
+    def get_sequences(structure_file: str):
+
+        structure, _ = StructureLoader.load_structure(structure_file)
+        chain_seq_dict = {}
+        for model in structure:
+            for chain in model:
+                seq = "".join([residue.resname for residue in chain])
+                chain_seq_dict[chain.id] = seq
+        
+        return chain_seq_dict
     
     @staticmethod
     def get_mean_bfactor(structure_file, chain_ids_list):
@@ -109,7 +150,7 @@ class StructureLoader:
             os.system(f'rm -f {filename}_temp.pdb')
     
     @staticmethod
-    def get_secondary_structure(structure_file):
+    def get_secondary_structure(structure_file, chain_id):
 
         """
         Run DSSP and return a dictionary mapping (chain_id, residue_id) to secondary structure type.
@@ -129,8 +170,9 @@ class StructureLoader:
         # Build the dictionary
         ss_dict = {}
         for key in dssp.keys():
-            chain_id, res_id = key
-            ss_dict[(chain_id, res_id[1])] = dssp[key][2]
+            chain, res_id = key
+            if chain == chain_id:
+                ss_dict[(chain, res_id[1])] = dssp[key][2]
 
         return ss_dict
 
@@ -139,7 +181,7 @@ class StructureFileEditor:
     @staticmethod
     def write_bfactor(pose, valuelist, filename):
         
-        # valuelist: [chain_id, res_id, res_name, bfactor]
+        # valuelist: [chain_id, res_id, bfactor]
         value_map = {(chain_id, res_id): bfactor for chain_id, res_id, bfactor in valuelist}
         
         # Enumerate the pose and change the bfactors
@@ -154,16 +196,21 @@ class StructureFileEditor:
         pose.dump_pdb(filename)
     
     @staticmethod
-    def write_score_as_bfactor(pose, structure_file, df_file, seq_length):
+    def write_score_as_bfactor(pose, structure_file, chain_id, df_file):
         
         df = pd.read_csv(df_file)
         sites = df["Site"].tolist()
-        data = [(1, i+1, df.loc[df["Site"] == i+1, "Borda_score"].values[0] * 100 if (i+1) in sites else 0.) for i in range(seq_length)]
-        StructureFileEditor.write_bfactor(pose, data, structure_file)
+        chain_seq_dict = StructureLoader.get_sequences(structure_file)
+        data_pose = []
+        for i, cs in enumerate(chain_seq_dict.items()):
+            chain, seq = cs
+            data = [(i+1, s+1, df.loc[df["Site"] == s+1, "Borda_score"].values[0] * 100 if chain == chain_id and (s+1) in sites else 0.) for s in range(len(seq))]
+        data_pose.extend(data)
+        StructureFileEditor.write_bfactor(pose, data_pose, structure_file)
 
 class MsaFileGenerator:
     
-    def __init__(self) -> None:
+    def __init__(self, input_fasta_file) -> None:
         """
         MSA file generator using ColabFold API.
         Adopted from ColabFold: https://github.com/sokrypton/ColabFold
@@ -174,6 +221,7 @@ class MsaFileGenerator:
         self.host_url = "https://api.colabfold.com"
         self.email = ""
         self.tqdm_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [elapsed: {elapsed} estimate remaining: {remaining}]"
+        self.seq_id_pairs = {rec.id: (str(rec.seq), int(rec.description.split(" ")[-1].split(":")[-1])) for rec in SeqIO.parse(input_fasta_file, "fasta")}
 
     def _submit_to_mmseqs2_service(
         self,
@@ -354,9 +402,16 @@ class MsaFileGenerator:
                 with tarfile.open(tar_gz_file, 'r:gz') as tar:
                     tar.extractall(os.path.dirname(tar_gz_file))
                 lines = open(f"{prefix}/uniref.a3m", 'r').readlines()[:-1]
-                with open(f"{prefix}/uniref.a3m", 'w') as f:
-                    f.writelines(lines)
-
+                pats = [re.compile(rf".*{k}") for k, _ in self.seq_id_pairs.items()]
+                idx = [[i for i, line in enumerate(lines) if pats[j].match(line.strip())] for j in range(len(pats))]
+                idx.append([len(lines)])
+                for i, _ in enumerate(range(len(idx) - 1)):
+                    start_idx = idx[i][0]
+                    end_idx = idx[i + 1][0]
+                    first_line = lines[start_idx][1:] if start_idx != 0 else lines[start_idx]
+                    with open(f"{prefix}/uniref_{i+1}.a3m", 'w') as f:
+                        f.write(first_line)
+                        f.writelines(lines[start_idx + 1: end_idx])
 
 class MsaFileEditor:
     
@@ -671,8 +726,8 @@ class GlycanMover:
         glycan_structure_file: str,
         output_pdb: str,
         asn_res_id: int,
-        protein_chain: str = 'A',
-        glycan_chain: str = 'X',
+        protein_chain: str = "A",
+        glycan_chain: str = "X",
         nag_res_id: int = 2
     ) -> None:
         """
@@ -683,8 +738,8 @@ class GlycanMover:
             glycan_structure_file (str): Path to PDB file of the glycan.
             output_pdb (str): Path to save the merged structure.
             asn_res_id (int): Residue ID of the Asn to which glycan is attached.
-            protein_chain (str, optional): Chain ID of the protein. Default is 'A'.
-            glycan_chain (str, optional): Chain ID of the glycan. Default is 'X'.
+            protein_chain (str, optional): Chain ID of the protein. Default is "A.
+            glycan_chain (str, optional): Chain ID of the glycan. Default is "X.
             nag_res_id (int, optional): Residue ID of the first glycan residue. Default is 2.
         """
         
@@ -738,7 +793,8 @@ class InteractionCheck:
 
     def _extract_cb(
         self,
-        structure: Structure
+        structure: Structure,
+        chain_id: str = None,
     ) -> Tuple[np.ndarray, List[int]]:
         """
         Extract Cβ (or Cα for Gly) coordinates and their residue IDs.
@@ -747,21 +803,22 @@ class InteractionCheck:
             structure (Structure): Biopython Structure object parsed from a PDB/mmCIF file.
 
         Returns:
-            coords (np.ndarray): CB/CA coordinates with shape (N, 3).
+            coords (np.ndarray): Cβ/Cα coordinates with shape (N, 3).
             res_ids (List[int]): Corresponding residue sequence numbers from the structure.
         """
         coords = []
         res_ids = []
         for model in structure:
             for chain in model:
-                for residue in chain:
-                    res = residue.resname
-                    for atom in residue:
-                        name = atom.get_fullname().strip(' ')
-                        if (res == "GLY" and name == "CA") or (res != "GLY" and name == "CB"):
-                            coords.append(atom.coord)
-                            res_ids.append(residue.get_id()[1])
-                            break
+                if chain_id is None or chain.get_id() == chain_id:
+                    for residue in chain:
+                        res = residue.resname
+                        for atom in residue:
+                            name = atom.get_fullname().strip(' ')
+                            if (res == "GLY" and name == "CA") or (res != "GLY" and name == "CB"):
+                                coords.append(atom.coord)
+                                res_ids.append(f"{chain.get_id()}_{residue.get_id()[1]}")
+                                break
             break
         return np.array(coords), res_ids
 
@@ -781,10 +838,49 @@ class InteractionCheck:
         diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
         dists = np.linalg.norm(diff, axis=-1)
         return dists
-
-    def get_interaction_aa(
+    
+    def get_inter_interaction_aa(
         self,
         structure_file: str,
+        chain_id: str,
+        dist_threshold: float = 6.0,
+    ) -> Set[int]:
+        """
+        Get inter-chain interacting residues on one specific chain.
+
+        Args:
+            structure_file (str): Path to the input structure file (e.g., mmCIF or PDB).
+            chain_id (str): Chain ID to extract Cβ/Cα coordinates.
+
+        Returns:
+            Set[int]: A set of residue sequence numbers that are in contact with the target residues.
+        """
+        structure, _ = StructureLoader.load_structure(structure_file)
+        coords_cb, res_ids = self._extract_cb(structure=structure)
+        contact = self._compute_contact_map(coords=coords_cb)
+        mask = np.full(contact.shape, 1.0)
+        groups = defaultdict(list)
+        for i, res_id in enumerate(res_ids):
+            chain, _ = res_id.split("_")
+            groups[chain].append(i)
+        
+        for _, idx_list in groups.items():
+            idx = np.array(idx_list)
+            mask[np.ix_(idx, idx)] = 1e8
+        
+        contact = contact * mask
+        np.fill_diagonal(contact, 1e8)
+
+        interacting_idxs = np.unique(np.where(contact <= dist_threshold)[0])
+        inter_interactions_aa = [int(res_ids[i].split("_")[1]) for i in interacting_idxs if res_ids[i].split("_")[0] == chain_id]
+        inter_interactions_aa = set(inter_interactions_aa)
+
+        return inter_interactions_aa
+
+    def get_intra_interaction_aa(
+        self,
+        structure_file: str,
+        chain_id: str,
         positions: List[int],
         dist_threshold: float = 6.0,
         is_self_included: bool = True,
@@ -804,7 +900,7 @@ class InteractionCheck:
             Set[int]: A set of residue sequence numbers that are in contact with the target residues.
         """
         structure, _ = StructureLoader.load_structure(structure_file)
-        coords_cb, res_ids = self._extract_cb(structure=structure)
+        coords_cb, res_ids = self._extract_cb(structure=structure, chain_id=chain_id)
         contact = self._compute_contact_map(coords=coords_cb)
         
         pts = []
@@ -828,13 +924,13 @@ class InteractionCheck:
 
         if is_self_included:
             return set(interacting_aas) | set(
-                [p + i for p in pts for i in range(1, num_neighbors + 1) if (p + i) <= res_ids[-1]]
+                [p + i for p in pts for i in range(1, num_neighbors + 1) if (p + i) <= int(res_ids[-1].split("_")[1])]
             ) | set(
                 [p - i for p in pts for i in range(1, num_neighbors + 1) if (p - i) > 0]
             )
         else:
             return set(interacting_aas) - set(pts) - set(
-                [p + i for p in pts for i in range(1, num_neighbors + 1) if (p + i) <= res_ids[-1]]
+                [p + i for p in pts for i in range(1, num_neighbors + 1) if (p + i) <= int(res_ids[-1].split("_")[1])]
             ) - set(
                 [p - i for p in pts for i in range(1, num_neighbors + 1) if (p - i) > 0]
             )
@@ -973,40 +1069,40 @@ class BordaCount:
         """
 
         self.weights = {
-            'ConservationScore': conservation_weight,
-            'CouplingScore': coupling_weight,
-            'SASA_i': sasa_weight,
-            'SASA_i+1': sasa_next1_weight,
-            'SASA_i+2': sasa_next2_weight,
-            'SASA_(i-1:i+1)': sasa_around_weight,
-            'SASA_(i:i+2)': sasa_next_weight,
+            "ConservationScore": conservation_weight,
+            "CouplingScore": coupling_weight,
+            "SASA_i": sasa_weight,
+            "SASA_i+1": sasa_next1_weight,
+            "SASA_i+2": sasa_next2_weight,
+            "SASA_(i-1:i+1)": sasa_around_weight,
+            "SASA_(i:i+2)": sasa_next_weight,
             "ddG": ddG_weight,
             "dTm": dTm_weight,
             "ddG_NXS": ddG_S_weight,
             "dTm_NXS": dTm_S_weight,
             "ddG_NXT": ddG_T_weight,
             "dTm_NXT": dTm_T_weight,
-            'MutScore': mut_score_weight,
-            'MutScore_NXS': mut_score_S_weight,
-            'MutScore_NXT': mut_score_T_weight,
+            "MutScore": mut_score_weight,
+            "MutScore_NXS": mut_score_S_weight,
+            "MutScore_NXT": mut_score_T_weight,
         }
         self.higher_is_better = {
-            'ConservationScore': False,
-            'CouplingScore': False,
-            'SASA_i': True,
-            'SASA_i+1': True,
-            'SASA_i+2': True,
-            'SASA_(i-1:i+1)': True,
-            'SASA_(i:i+2)': True,
+            "ConservationScore": False,
+            "CouplingScore": False,
+            "SASA_i": True,
+            "SASA_i+1": True,
+            "SASA_i+2": True,
+            "SASA_(i-1:i+1)": True,
+            "SASA_(i:i+2)": True,
             "ddG": True,
             "dTm": True,
             "ddG_NXS": True,
             "dTm_NXS": True,
             "ddG_NXT": True,
             "dTm_NXT": True,
-            'MutScore': True,
-            'MutScore_NXS': True,
-            'MutScore_NXT': True,
+            "MutScore": True,
+            "MutScore_NXS": True,
+            "MutScore_NXT": True,
         }
 
     def compute_score(self, dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -1040,3 +1136,75 @@ class BordaCount:
         df["Borda_score"] = df["Borda_score"].round(3)
         df.sort_values(by='Borda_score', ascending=False, inplace=True)
         return df
+    
+def plot_heatmap(
+    df_file: str,
+    out_file: str,
+):
+
+    df = pd.read_csv(df_file)
+    higher_is_better = {
+        "ConservationScore": False,
+        "CouplingScore": False,
+        "SASA_i": True,
+        "SASA_i+1": True,
+        "SASA_i+2": True,
+        "SASA_(i-1:i+1)": True,
+        "SASA_(i:i+2)": True,
+        "ddG": True,
+        "dTm": True,
+        "ddG_NXS": True,
+        "dTm_NXS": True,
+        "ddG_NXT": True,
+        "dTm_NXT": True,
+        "MutScore": True,
+        "MutScore_NXS": True,
+        "MutScore_NXT": True,
+    }
+    for c, h in higher_is_better.items():
+        if c in df.columns and not h:
+            df[c] = -df[c]
+    for col in ["Site", "SS", "Clash"]:
+        if col in df.columns:
+            del df[col]
+    df.set_index("Mutation", inplace=True)
+
+    scaler = MinMaxScaler()
+    df_normalized = pd.DataFrame(
+        scaler.fit_transform(df.values),
+        columns=df.columns,
+        index=df.index
+    )
+
+    plt.figure(figsize=(8.5, 7))
+    three_color_cmap = mcolors.LinearSegmentedColormap.from_list(
+        "three_color_cmap",
+        ["#91C8F6", "#FDF6ED", "#F6A6A1"],
+        N=256
+    )
+    sns.heatmap(
+        df_normalized,
+        cmap=three_color_cmap,
+        cbar=True,
+        annot_kws={"size": 4},
+        vmin=0, vmax=1
+    )
+
+    plt.title("Single Point Mutations", fontsize=12)
+    plt.rcParams["font.size"] = 12
+    plt.rcParams["axes.linewidth"] = 0.5
+    plt.rcParams["xtick.major.width"] = 0.5
+    plt.rcParams["ytick.major.width"] = 0.5
+    plt.rcParams["xtick.major.size"] = 3
+    plt.rcParams["ytick.major.size"] = 3
+    plt.rcParams["xtick.direction"] = "out"
+    plt.rcParams["ytick.direction"] = "out"
+    plt.rcParams["axes.labelpad"] = 5
+    plt.rcParams["xtick.labeltop"] = False
+    plt.rcParams["xtick.labelbottom"] = True
+    plt.rcParams["ytick.labelleft"] = True
+    plt.rcParams["ytick.labelright"] = False
+    plt.rcParams["xtick.major.pad"] = 3.5
+    plt.rcParams["ytick.major.pad"] = 3.5
+    plt.rcParams["axes.grid"] = False
+    plt.savefig(out_file, dpi=300, bbox_inches="tight")
