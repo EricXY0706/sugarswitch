@@ -243,15 +243,16 @@ def run_prefilters(
                   "MutScore", "MutScore_NXS", "MutScore_NXT", "Clash"]
     ranker = BordaCount(**ranker_configs)
     df = ranker.compute_score(df)
-    df.to_csv(f"{output_dir}/{filename}_single_points.csv", index=False)
+    df_file = f"{output_dir}/{filename}_single_points.csv"
+    df.to_csv(df_file, index=False)
     pose = Rosetta_funcs.get_pose(f"{output_dir}/{filename}.pdb")
     StructureFileEditor.write_score_as_bfactor(
         pose=pose,
         structure_file=f"{output_dir}/{filename}.pdb",
         chain_id=chain,
-        df_file=f"{output_dir}/{filename}_single_points.csv",
+        df_file=df_file,
     )
     plot_heatmap(
-        df_file=f"{output_dir}/{filename}_single_points.csv",
+        df_file=df_file,
         out_file=f"{output_dir}/{filename}_single_points_heatmap.pdf",
     )
