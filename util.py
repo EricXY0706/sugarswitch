@@ -50,7 +50,7 @@ class FlowList(list):
     pass
 
 def flow_list_representer(dumper, data):
-    return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
+    return dumper.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=True)
 
 yaml.add_representer(FlowList, flow_list_representer, Dumper=yaml.SafeDumper)
 
@@ -78,25 +78,25 @@ class StructureLoader:
     def cif_to_pdb(structure_file):
         
         # Load cif structure file
-        filename = structure_file.split('.')[0]
+        filename = structure_file.split(".")[0]
         parser = MMCIFParser()
-        structure = parser.get_structure('structure', structure_file)
+        structure = parser.get_structure("structure", structure_file)
         
         # Write the structure into pdb structure file
         pdb_io = PDBIO()
         pdb_io.set_structure(structure)
-        pdb_io.save(f'{filename}_temp.pdb')
+        pdb_io.save(f"{filename}_temp.pdb")
         
-        return f'{filename}_temp.pdb'
+        return f"{filename}_temp.pdb"
     
     @staticmethod
     def load_structure(structure_file: str):
         
-        if structure_file.endswith('cif'):
+        if structure_file.endswith("cif"):
             parser = MMCIFParser(QUIET=True)
             structure = parser.get_structure("structure", structure_file)
 
-        elif structure_file.endswith('pdb'):
+        elif structure_file.endswith("pdb"):
             parser = PDBParser(QUIET=True)
             structure = parser.get_structure("structure", structure_file)
 
@@ -143,11 +143,11 @@ class StructureLoader:
     def remove_temp_file(structure_file):
         
         # Get file name
-        filename = structure_file.split('.')[0]
+        filename = structure_file.split(".")[0]
         
         # Delete temp file
-        if structure_file.endswith('cif'):
-            os.system(f'rm -f {filename}_temp.pdb')
+        if structure_file.endswith("cif"):
+            os.system(f"rm -f {filename}_temp.pdb")
     
     @staticmethod
     def get_secondary_structure(structure_file, chain_id):
@@ -321,7 +321,7 @@ class MsaFileGenerator:
                     raise e
                 continue
             break
-        with open(path, 'wb') as f:
+        with open(path, "wb") as f:
             f.write(res.content)
         
     def run_mmseqs2(
@@ -399,9 +399,9 @@ class MsaFileGenerator:
                     ID=ID,
                     path=tar_gz_file,
                 )
-                with tarfile.open(tar_gz_file, 'r:gz') as tar:
+                with tarfile.open(tar_gz_file, "r:gz") as tar:
                     tar.extractall(os.path.dirname(tar_gz_file))
-                lines = open(f"{prefix}/uniref.a3m", 'r').readlines()[:-1]
+                lines = open(f"{prefix}/uniref.a3m", "r").readlines()[:-1]
                 pats = [re.compile(rf".*{k}") for k, _ in self.seq_id_pairs.items()]
                 idx = [[i for i, line in enumerate(lines) if pats[j].match(line.strip())] for j in range(len(pats))]
                 idx.append([len(lines)])
@@ -409,7 +409,7 @@ class MsaFileGenerator:
                     start_idx = idx[i][0]
                     end_idx = idx[i + 1][0]
                     first_line = lines[start_idx][1:] if start_idx != 0 else lines[start_idx]
-                    with open(f"{prefix}/uniref_{i+1}.a3m", 'w') as f:
+                    with open(f"{prefix}/uniref_{i+1}.a3m", "w") as f:
                         f.write(first_line)
                         f.writelines(lines[start_idx + 1: end_idx])
 
@@ -420,7 +420,7 @@ class MsaFileEditor:
         
         # Load the MSA sequences from a FASTA file into a dictionary
         msa_seqs = {}
-        for seq_rec in SeqIO.parse(msa_file, 'fasta'):
+        for seq_rec in SeqIO.parse(msa_file, "fasta"):
             msa_seqs[seq_rec.description] = str(seq_rec.seq)
         return msa_seqs
     
@@ -435,7 +435,7 @@ class MsaFileEditor:
     def find_seq_change(old_seq, new_seq):
         
         # Align the two seqs
-        aligned_seq_1 = old_seq + '-'*(len(new_seq)-len(old_seq))
+        aligned_seq_1 = old_seq + "-"*(len(new_seq)-len(old_seq))
         aligned_seq_2 = new_seq
         
         # Find the gaps for insertion
@@ -454,19 +454,19 @@ class MsaFileEditor:
         assert gaps_length >= 0
         
         # Update the MSA file
-        open(msa_file_out, 'w')
-        with open(msa_file_out, 'a') as f:
+        open(msa_file_out, "w")
+        with open(msa_file_out, "a") as f:
             for desc, seq in msa_seqs.items():
                 
                 # Query seq
-                if desc == '101':
+                if desc == "101":
                     MsaFileEditor.write_msa_record(desc, new_seq, f)
                 
                 # MSA seqs
                 else:
                     seq = "".join([c for c in list(seq) if c.isupper() or c == "-"])
                     seq_ = seq[:gaps_index] + ("-" * max(0, gaps_length)) + seq[gaps_index:]
-                    assert len(seq_) == len(new_seq), f'Error in {desc} alignment'
+                    assert len(seq_) == len(new_seq), f"Error in {desc} alignment"
                     MsaFileEditor.write_msa_record(desc, seq_, f)
                     
     @staticmethod
@@ -476,9 +476,9 @@ class MsaFileEditor:
         # mutations = {index: n_ins}
         msa_seqs = MsaFileEditor.load_msa_seqs(msa_file_in)
 
-        with open(msa_file_out, 'w') as f:
+        with open(msa_file_out, "w") as f:
             for desc, seq in msa_seqs.items():
-                if desc == '101':
+                if desc == "101":
                     MsaFileEditor.write_msa_record(desc, new_seq, f)
                 else:
                     seq = "".join([c for c in seq if c.isupper() or c == "-"])
@@ -486,13 +486,13 @@ class MsaFileEditor:
                     for index, n_ins in sorted(mutations.items(), reverse=True):
                         if index < len(new_aligned_seq):
                             if n_ins >0:
-                                new_aligned_seq.insert(index, '-'*n_ins)
+                                new_aligned_seq.insert(index, "-"*n_ins)
                         else:
-                            new_aligned_seq.append('-')
+                            new_aligned_seq.append("-")
                     
-                    new_aligned_seq = ''.join(new_aligned_seq)
+                    new_aligned_seq = "".join(new_aligned_seq)
 
-                    assert len(new_aligned_seq) == len(new_seq), f'Error in {desc} alignment'
+                    assert len(new_aligned_seq) == len(new_seq), f"Error in {desc} alignment"
                     MsaFileEditor.write_msa_record(desc, new_aligned_seq, f)
 
 class GlycanMover:
@@ -543,7 +543,7 @@ class GlycanMover:
 
         Args:
             structure: Bio.PDB structure object.
-            chain_id (str): Chain ID (e.g., 'A').
+            chain_id (str): Chain ID (e.g., "A").
             res_id (int): Residue ID.
             atom_names (list[str]): List of atom names to extract.
 
@@ -711,7 +711,7 @@ class GlycanMover:
             io.save(f)
         lines = open(output_path).readlines()[:-1]
         lines.extend(glycan_lines)
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             for line in lines:
                 if line.startswith("ATOM") and ("ROH" in line and "SYST" in line):
                     continue
@@ -738,8 +738,8 @@ class GlycanMover:
             glycan_structure_file (str): Path to PDB file of the glycan.
             output_pdb (str): Path to save the merged structure.
             asn_res_id (int): Residue ID of the Asn to which glycan is attached.
-            protein_chain (str, optional): Chain ID of the protein. Default is "A.
-            glycan_chain (str, optional): Chain ID of the glycan. Default is "X.
+            protein_chain (str, optional): Chain ID of the protein. Default is "A".
+            glycan_chain (str, optional): Chain ID of the glycan. Default is "X".
             nag_res_id (int, optional): Residue ID of the first glycan residue. Default is 2.
         """
         
@@ -814,7 +814,7 @@ class InteractionCheck:
                     for residue in chain:
                         res = residue.resname
                         for atom in residue:
-                            name = atom.get_fullname().strip(' ')
+                            name = atom.get_fullname().strip(" ")
                             if (res == "GLY" and name == "CA") or (res != "GLY" and name == "CB"):
                                 coords.append(atom.coord)
                                 res_ids.append(f"{chain.get_id()}_{residue.get_id()[1]}")
@@ -941,7 +941,7 @@ class ClashCheck:
         Initialize the ClashCheck class with van der Waals radii for common elements.
         These values are used to compute steric clash thresholds between atoms.
         """
-        self.vdw = {'C': 1.82, 'N': 1.64, 'O': 1.44, 'S': 1.77}
+        self.vdw = {"C": 1.82, "N": 1.64, "O": 1.44, "S": 1.77}
 
     def _extract_all_coords(
         self, 
@@ -970,7 +970,7 @@ class ClashCheck:
                 for residue in chain:
                     for atom in residue:
                         elem = atom.element
-                        if elem != 'H':
+                        if elem != "H":
                             coords.append(atom.get_coord())
                             elems.append(elem)
                             chain_ids.append(chain.id)
@@ -1124,7 +1124,7 @@ class BordaCount:
                 continue
 
             ascending = not self.higher_is_better[col]
-            ranks = df[col].rank(method='min', ascending=ascending)
+            ranks = df[col].rank(method="min", ascending=ascending)
             max_rank = ranks.max()
             borda_scores = max_rank - ranks + 1
             scores += borda_scores * weight
@@ -1133,9 +1133,9 @@ class BordaCount:
         max_score = scores.max()
         norm_scores = (scores - min_score) / (max_score - min_score + 1e-8)
 
-        df.insert(0, 'Borda_score', norm_scores)
+        df.insert(0, "Borda_score", norm_scores)
         df["Borda_score"] = df["Borda_score"].round(3)
-        df.sort_values(by='Borda_score', ascending=False, inplace=True)
+        df.sort_values(by="Borda_score", ascending=False, inplace=True)
         return df
     
 def plot_heatmap(

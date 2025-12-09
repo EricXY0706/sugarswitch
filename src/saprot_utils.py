@@ -35,7 +35,7 @@ class SaProt_funcs:
                 aligned_seq2.append(seq2[j])
                 j += 1
             else:
-                aligned_seq2.append('-')
+                aligned_seq2.append("-")
             i += 1
         
         return "".join(aligned_seq2)

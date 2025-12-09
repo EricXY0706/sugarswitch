@@ -41,15 +41,15 @@ class EVC_funcs:
         '''
         Convert a3m file to a2m file with equal length
         '''
-        with open(self.a2m_file, 'a') as f:
+        with open(self.a2m_file, "a") as f:
             for record in self.a3m_aln:
                 des = record.description
-                seq = ''.join([aa for aa in str(record.seq) if aa in self.aa_list])
-                if (seq.count('-') / len(seq)) <= gap_threshold:
+                seq = "".join([aa for aa in str(record.seq) if aa in self.aa_list])
+                if (seq.count("-") / len(seq)) <= gap_threshold:
                     f.write(f">{des}\n{seq}\n")
         
-        with open(self.a2m_file, 'r') as f:
-            aln = Alignment.from_file(f, format='fasta')
+        with open(self.a2m_file, "r") as f:
+            aln = Alignment.from_file(f, format="fasta")
         
         return aln
     
@@ -126,11 +126,11 @@ class EVC_funcs:
             coupling_strength[res1][res2] = score
             coupling_strength[res2][res1] = score
         plt.figure()
-        plt.imshow(coupling_strength, cmap='RdBu_r', vmin=-1, vmax=1)
+        plt.imshow(coupling_strength, cmap="RdBu_r", vmin=-1, vmax=1)
         plt.title("Evolutionary Coupling Matrix")
         plt.colorbar()
         plt.tight_layout()
-        plt.savefig(f"{self.out_dir}/evc.{pic_format}", bbox_inches='tight')
+        plt.savefig(f"{self.out_dir}/evc.{pic_format}", bbox_inches="tight")
 
         # conservation
         conserve_df = pd.read_csv(self.freq_file)

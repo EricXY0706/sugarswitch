@@ -27,9 +27,9 @@ def update_infer(
     """
     if not os.path.exists(input_fasta_file):
         raise FileNotFoundError(f"Input fasta file `{input_fasta_file}` not found.")
-    filename = Path(input_fasta_file).name.split('.')[0]
+    filename = Path(input_fasta_file).name.split(".")[0]
     msa = MsaFileGenerator(input_fasta_file=input_fasta_file)
-    with open(input_fasta_file, 'r') as f:
+    with open(input_fasta_file, "r") as f:
         query = f.read()
     msa.run_mmseqs2(x=query, prefix=f"{output_dir}/msa")
     
@@ -141,8 +141,6 @@ def run_prefilters(
     results = []
     saprot = SaProt_funcs()
     spired = Spired_funcs()
-
-    editable_regions = {4, 5}
     
     for s in tqdm(editable_regions, dynamic_ncols=True):
         
