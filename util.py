@@ -1046,24 +1046,25 @@ class ClashCheck:
             return clash_res_index if clash_res_index else None
 
 class BordaCount:
-    def __init__(self,
-                 conservation_weight: float = 1.0,
-                 coupling_weight: float = 0.2,
-                 sasa_weight: float = 1.0,
-                 sasa_next1_weight: float = 0.7,
-                 sasa_next2_weight: float = 0.5,
-                 sasa_around_weight: float = 1.0,
-                 sasa_next_weight: float = 0.6,
-                 ddG_weight: float = 0.5,
-                 dTm_weight: float = 0.5,
-                 ddG_S_weight: float = 0.3,
-                 dTm_S_weight: float = 0.3,
-                 ddG_T_weight: float = 0.3,
-                 dTm_T_weight: float = 0.3,
-                 mut_score_weight: float = 0.3,
-                 mut_score_S_weight: float = 0.2,
-                 mut_score_T_weight: float = 0.2,
-                 ) -> None:
+    def __init__(
+        self,
+        conservation_weight: float = 1.0,
+        coupling_weight: float = 0.2,
+        sasa_weight: float = 1.0,
+        sasa_next1_weight: float = 0.7,
+        sasa_next2_weight: float = 0.5,
+        sasa_around_weight: float = 1.0,
+        sasa_next_weight: float = 0.6,
+        ddG_weight: float = 0.5,
+        dTm_weight: float = 0.5,
+        ddG_S_weight: float = 0.3,
+        dTm_S_weight: float = 0.3,
+        ddG_T_weight: float = 0.3,
+        dTm_T_weight: float = 0.3,
+        mut_score_weight: float = 0.3,
+        mut_score_S_weight: float = 0.2,
+        mut_score_T_weight: float = 0.2,
+    ) -> None:
         """
         Initialize the BordaCount class with weights for different features.
         """
