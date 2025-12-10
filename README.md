@@ -66,7 +66,7 @@
           "dihedral_O5_C1_ND2_CG": {"loop": -120.0, "helix": -100.0, "sheet": -140.0},
          }
          ```
-      - **ranker configurations**:
+      - **ranker configurations**:  
         ➡️ Manually set the weights for all the factors for glycosylation sites ranking. The higher the value, the more important the factor is.
         ```Python
         # An example
