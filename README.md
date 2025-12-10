@@ -28,23 +28,42 @@
 ### Usage
 1. **Update the configrations in `config.py`**
    
-   1.1 **Must-ToDos**:  
-   Manually spefify the protein chain ID to be modified with `protein_chain_id` and the important sites which you think the modification pipeline should **ignore** with `functional_hotspots` in **`user_configs`**
-   ```Python
-   # An Example
-   
-   user_configs = {
-    "protein_chain_id": "A", # Specify the chain ID to be modified and glycosylated
-    "functional_hotspots": [1,2,3], # e.g. [1,2,3,"4-10"], if an interval is input, both the lower and the upper bond are included
-   }
-   ```
-   1.2 **Optional-ToDos**:  
-   1.2.1 **pipeline configurations**:  
-   > We recommand not adjusting the **EVCouplings** related configs (EVC, unless you are familiar with the parameters) and empirically pre-defined **glycan chain topological parameters** (bond length, angles, and dihedrals).
-   > `Conservation_threshold`, `evc_coupling_threshold`, and `sasa_cutoff` can be appropriately adjusted.
-   ```Python
-   # An Example
-
-   
-   ```
+   - **Must-ToDos**:  
+      ➡️ Manually spefify the protein chain ID to be modified with `protein_chain_id` and the important sites which you think the modification pipeline should **ignore** with `functional_hotspots` in **`user_configs`**
+      ```Python
+      # An Example
+      
+      user_configs = {
+       "protein_chain_id": "A", # Specify the chain ID to be modified and glycosylated.
+       "functional_hotspots": [1,2,3], # e.g. [1,2,3,"4-10"], if an interval is input, both the lower and the upper bond are included.
+      }
+      ```
+   - **Optional-ToDos**:
+      - **pipeline configurations**:  
+         ⚠️ We recommand not adjusting the **EVCouplings** related configs (EVC, unless you are familiar with the parameters) and empirically pre-defined **glycan chain topological parameters** (bond length, angles, and dihedrals).  
+         ✅ `Conservation_threshold`, `evc_coupling_threshold`, and `sasa_cutoff` can be appropriately adjusted.
+         ```Python
+         # An Example
+         pipeline_configs = {
+          "Cb_interaction_threshold": 6.0,
+          "num_neighbors_to_shield": 3,
+          "evc_min_sequence_distance": 6,
+          "evc_theta": 0.8,
+          "evc_num_iterations": 100,
+          "evc_lambda_h": 0.01,
+          "evc_lambda_J": 0.01,
+          "evc_num_cpu": 10,
+          "conservation_threshold": {"loop": 0.5, "ss": 0.5}, # The residues on loop region/other secondary structures with conservation value above the given threshold will be discarded from the prefilter. The higher the thresholds, the less strict the filtering.
+          "evc_coupling_threshold": 0.5, # The residues with co-evolving strength above the given threshold will be discarded from the prefilter. The higher the threshold, the less strict the filtering.
+          "sasa_cutoff": 0.5, # The residues with SASA values falling in the last n% will be discarded from the prefilter. The higher the threshold, the more strict the filtering.
+          "bond_length_C1_ND2": 1.43,
+          "angle_C1_ND2_CG": 120.0,
+          "angle_C2_C1_ND2": 109.5,
+          "angle_O5_C1_ND2": 109.5,
+          "dihedral_C1_ND2_CG_CB": {"loop": -120.0, "helix": -180.0, "sheet": 180.0},
+          "dihedral_C2_C1_ND2_CG": {"loop": 120.0, "helix": 140.0, "sheet": 100.0},
+          "dihedral_O5_C1_ND2_CG": {"loop": -120.0, "helix": -100.0, "sheet": -140.0},
+         }
+         ```
+      - **ranker configurations**:
    
