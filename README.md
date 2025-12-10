@@ -31,7 +31,7 @@
    - **Must-ToDos**:  
       ➡️ Manually spefify the protein chain ID to be modified with `protein_chain_id` and the important sites which you think the modification pipeline should **ignore** with `functional_hotspots` in **`user_configs`**
       ```Python
-      # An Example
+      # An example
       
       user_configs = {
        "protein_chain_id": "A", # Specify the chain ID to be modified and glycosylated.
@@ -40,10 +40,11 @@
       ```
    - **Optional-ToDos**:
       - **pipeline configurations**:  
-         ⚠️ We recommand not adjusting the **EVCouplings** related configs (EVC, unless you are familiar with the parameters) and empirically pre-defined **glycan chain topological parameters** (bond length, angles, and dihedrals).  
-         ✅ `Conservation_threshold`, `evc_coupling_threshold`, and `sasa_cutoff` can be appropriately adjusted.
+        ⚠️ We recommand not adjusting the **EVCouplings** related configs (EVC, unless you are familiar with the parameters) and empirically pre-defined **glycan chain topological parameters** (bond length, angles, and dihedrals).  
+        ✅ `Conservation_threshold`, `evc_coupling_threshold`, and `sasa_cutoff` can be appropriately adjusted.
          ```Python
-         # An Example
+         # An example
+         
          pipeline_configs = {
           "Cb_interaction_threshold": 6.0,
           "num_neighbors_to_shield": 3,
@@ -66,4 +67,26 @@
          }
          ```
       - **ranker configurations**:
-   
+        ➡️ Manually set the weights for all the factors for glycosylation sites ranking. The higher the value, the more important the factor is.
+        ```Python
+        # An example
+
+        ranker_configs = {
+          "conservation_weight": 1.0, # Conservation level. The next 2 values are computed by EVCouplings.
+          "coupling_weight": 0.5, # Co-evolving strength.
+          "sasa_weight": 1.0, # SASA of the current site. The next 5 values are computed by EVCouplings.
+          "sasa_next1_weight": 0.7, # SASA of the next site to the current site.
+          "sasa_next2_weight": 0.5, # SASA of the next 2nd site to the current site.
+          "sasa_around_weight": 1.0, # Mean SASA value of the triad sequon around the current site.
+          "sasa_next_weight": 0.6, # Mean SASA value of the triad sequon following the current site.
+          "ddG_weight": 0.3, # ΔΔG of the protein mutant (NXX) and WT. The next 6 values are computed by SaProt.
+          "dTm_weight": 0.3, # ΔTm of the protein mutant (NXX) and WT
+          "ddG_S_weight": 0.2, # ΔΔG of the protein mutant (NXS) and WT
+          "dTm_S_weight": 0.2, # ΔTm of the protein mutant (NXS) and WT
+          "ddG_T_weight": 0.2, # ΔΔG of the protein mutant (NXT) and WT
+          "dTm_T_weight": 0.2, # ΔTm of the protein mutant (NXT) and WT
+          "mut_score_weight": 0.3,
+          "mut_score_S_weight": 0.2,
+          "mut_score_T_weight": 0.2,
+         }
+        ```
