@@ -23,11 +23,13 @@
 > - Create and initiate **sugarswitch** conda environment with Python 3.10
 > - Install all the required dependencies
 > - Download SaProt and SPIRED weights
-> - Download PyRosetta
+> - Download and install PyRosetta and DSSP
 
 ### Usage
-1. **Update the configrations in `config.py`**  
-1.1 **Must-ToDos**: Manually spefify the protein chain ID to be modified with `protein_chain_id` and the import sites which the modification pipeline should ignore with `functional_hotspots` in **`user_configs`**
+1. **Update the configrations in `config.py`**
+   
+   1.1 **Must-ToDos**:  
+   Manually spefify the protein chain ID to be modified with `protein_chain_id` and the important sites which you think the modification pipeline should **ignore** with `functional_hotspots` in **`user_configs`**
    ```Python
    # An Example
    
@@ -36,3 +38,13 @@
     "functional_hotspots": [1,2,3], # e.g. [1,2,3,"4-10"], if an interval is input, both the lower and the upper bond are included
    }
    ```
+   1.2 **Optional-ToDos**:  
+   1.2.1 **pipeline configurations**:  
+   > We recommand not adjusting the **EVCouplings** related configs (EVC, unless you are familiar with the parameters) and empirically pre-defined **glycan chain topological parameters** (bond length, angles, and dihedrals).
+   > `Conservation_threshold`, `evc_coupling_threshold`, and `sasa_cutoff` can be appropriately adjusted.
+   ```Python
+   # An Example
+
+   
+   ```
+   
