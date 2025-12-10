@@ -100,9 +100,9 @@
      # An example
      # In this case, test_seq_1 will be chain A-C, and test_seq_2 will be chain D
 
-     > test_seq_1 copies: 3
+     >test_seq_1 copies: 3
      MSSQIRQNYSTDVEAAVNSLVNLYLQASYTYLSLGFYFDR...
-     > test_seq_2 copies: 1
+     >test_seq_2 copies: 1
      WNPPTFSPALLVVTEGDNATFTCSFSNTSESFVLNWYRMS...
      ```
 
