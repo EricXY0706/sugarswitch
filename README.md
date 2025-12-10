@@ -7,12 +7,12 @@
 ## Quick start
 ### Installation
 
-1. **Clone the repository**
+1. **Clone the repository**  
    ```bash
    git clone https://github.com/EricXY0706/sugarswitch.git
    cd sugarswitch
    ```
-2. **Run the automated setup procedure**
+2. **Run the automated setup procedure**  
    ```bash
    chmod +x setup.sh
    ./setup.sh
@@ -74,19 +74,54 @@
         ranker_configs = {
           "conservation_weight": 1.0, # Conservation level. The next 2 values are computed by EVCouplings.
           "coupling_weight": 0.5, # Co-evolving strength.
-          "sasa_weight": 1.0, # SASA of the current site. The next 5 values are computed by EVCouplings.
+          "sasa_weight": 1.0, # SASA of the current site. The next 5 values are computed by PyRosetta.
           "sasa_next1_weight": 0.7, # SASA of the next site to the current site.
           "sasa_next2_weight": 0.5, # SASA of the next 2nd site to the current site.
           "sasa_around_weight": 1.0, # Mean SASA value of the triad sequon around the current site.
           "sasa_next_weight": 0.6, # Mean SASA value of the triad sequon following the current site.
-          "ddG_weight": 0.3, # ΔΔG of the protein mutant (NXX) and WT. The next 6 values are computed by SaProt.
+          "ddG_weight": 0.3, # ΔΔG of the protein mutant (NXX) and WT. The next 6 values are computed by SPIRED.
           "dTm_weight": 0.3, # ΔTm of the protein mutant (NXX) and WT
           "ddG_S_weight": 0.2, # ΔΔG of the protein mutant (NXS) and WT
           "dTm_S_weight": 0.2, # ΔTm of the protein mutant (NXS) and WT
           "ddG_T_weight": 0.2, # ΔΔG of the protein mutant (NXT) and WT
           "dTm_T_weight": 0.2, # ΔTm of the protein mutant (NXT) and WT
-          "mut_score_weight": 0.3,
-          "mut_score_S_weight": 0.2,
-          "mut_score_T_weight": 0.2,
+          "mut_score_weight": 0.3, # Mutation score of the protein mutant (NXX). The next 3 values are computed by SaProt.
+          "mut_score_S_weight": 0.2, # Mutation score of the protein mutant (NXS).
+          "mut_score_T_weight": 0.2, # Mutation score of the protein mutant (NXT).
          }
         ```
+2. **Run the pipeline**  
+   Run the pipeline with the following command:
+   ```Python
+   python run_sugarswitch.py prefilter --input [input_fasta_file] --out_dir [output_dir]
+   ```
+   - ⚠️ The input file in FASTA format should contain at least one sequence. Please note that the chain ID specified in `protein_chain_id` in the `config.py` should correspond to the number and order of the chains
+     ```txt
+     # An example
+     # In this case, test_seq_1 will be chain A-C, and test_seq_2 will be chain D
+
+     > test_seq_1 copies: 3
+     MSSQIRQNYSTDVEAAVNSLVNLYLQASYTYLSLGFYFDR...
+     > test_seq_2 copies: 1
+     WNPPTFSPALLVVTEGDNATFTCSFSNTSESFVLNWYRMS...
+     ```
+
+## Acknowledgements
+1. Hopf, Thomas A., et al. "The EVcouplings Python framework for coevolutionary sequence analysis." Bioinformatics 35.9 (2019): 1582-1584.
+2. Chaudhury, Sidhartha, Sergey Lyskov, and Jeffrey J. Gray. "PyRosetta: a script-based interface for implementing molecular modeling algorithms using Rosetta." Bioinformatics 26.5 (2010): 689-691.
+3. Chen, Yinghui, et al. "An end-to-end framework for the prediction of protein structure and fitness from single sequence." Nature Communications 15.1 (2024): 7400.
+4. Su, Jin, et al. "Saprot: Protein language modeling with structure-aware vocabulary." BioRxiv (2023): 2023-10.
+
+## Licence & Citation
+**License**: MIT License - See LICENSE file for details  
+**Citation**: If you use SugarSwitch in your research, please cite:
+```
+@article{xxx,
+  title={title},
+  author={authors},
+  journal={journal},
+  pages={pages},
+  year={2025},
+  publisher={publisher}
+}
+```
