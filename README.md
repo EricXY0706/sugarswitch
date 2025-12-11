@@ -29,7 +29,7 @@
 1. **Update the configrations in `config.py`**
    
    - **Must-ToDos**:  
-      ➡️ Manually spefify the protein chain ID to be modified with `protein_chain_id` and the important sites which you think the modification pipeline should **ignore** with `functional_hotspots` in **`user_configs`**
+      ➡️ Manually specify the protein chain ID to be modified with `protein_chain_id` and the important sites which you think the modification pipeline should **ignore** with `functional_hotspots` in **`user_configs`**
       ```Python
       # An example
       
