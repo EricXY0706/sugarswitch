@@ -4,6 +4,7 @@ boltz_ckpt/.gitattributes
 boltz_ckpt/boltz2_aff.ckpt
 boltz_ckpt/boltz2_conf.ckpt
 boltz_ckpt/mols.tar
+LigandMPNN
 plmc/
 SaProt/weights/PLMs/.gitattributes
 SaProt/weights/PLMs/config.json

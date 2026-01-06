@@ -64,6 +64,7 @@ fi
 (
     cd plmc
     make all-openmp32
+    cd ..
 )
 
 # -------------------------------
@@ -105,6 +106,19 @@ echo "[INFO] Installing DSSP..."
 conda install -c ostrokach dssp -y
 
 # -------------------------------
+# 5. PyRosetta + DSSP
+# -------------------------------
+echo "[INFO] Installing LigandMPNN..."
+git clone https://github.com/dauparas/LigandMPNN.git
+cd LigandMPNN
+mkdir -p ./model_params
+wget -q https://files.ipd.uw.edu/pub/ligandmpnn/solublempnn_v_48_002.pt -O ./model_params/solublempnn_v_48_002.pt
+wget -q https://files.ipd.uw.edu/pub/ligandmpnn/solublempnn_v_48_010.pt -O ./model_params/solublempnn_v_48_010.pt
+wget -q https://files.ipd.uw.edu/pub/ligandmpnn/solublempnn_v_48_020.pt -O ./model_params/solublempnn_v_48_020.pt
+wget -q https://files.ipd.uw.edu/pub/ligandmpnn/solublempnn_v_48_030.pt -O ./model_params/solublempnn_v_48_030.pt
+cd ..
+
+# -------------------------------
 # 6. Python dependencies
 # -------------------------------
 echo "[INFO] Installing Python dependencies..."
@@ -119,6 +133,8 @@ pip install \
     scikit-learn==1.6.1 \
     seaborn==0.13.2 \
     torch==2.8.0 \
+    prody==2.4.1 \
+    ml_collections==0.1.1 \
     --no-cache-dir
 
 echo ""

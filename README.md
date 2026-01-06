@@ -24,6 +24,7 @@
 > - Install all the required dependencies
 > - Download SaProt and SPIRED weights
 > - Download and install PyRosetta and DSSP
+> - Download and install LigandMPNN
 
 ### Usage
 1. **Update the configrations in `config.py`**

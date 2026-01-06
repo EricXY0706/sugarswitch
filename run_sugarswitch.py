@@ -25,8 +25,11 @@ def prefilter(input, out_dir):
         output_dir=out_dir
     )
 
-sugarswitch.add_command(prefilter)
+def design():
+    pass
 
+sugarswitch.add_command(prefilter)
+sugarswitch.add_command(design)
 
 if __name__ == "__main__":
     sugarswitch()
