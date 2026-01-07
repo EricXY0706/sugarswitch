@@ -1,7 +1,9 @@
-from src.prefilters import update_infer, run_prefilters
 from pathlib import Path
 import click
 import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from src.prefilters import update_infer, run_prefilters
 
 @click.group()
 def sugarswitch():
@@ -21,10 +23,11 @@ def prefilter(input, out_dir):
 
     run_prefilters(
         input_fasta_file=input,
-        input_structure_file=f"{out_dir}/{Path(input).name.split(".")[0]}.pdb",
+        input_structure_file=f"{out_dir}/{Path(input).name.split('.')[0]}.pdb",
         output_dir=out_dir
     )
 
+@click.command()
 def design():
     pass
 

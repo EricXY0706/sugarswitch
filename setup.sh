@@ -127,7 +127,6 @@ pip install \
     biopython==1.84 \
     einops==0.8.0 \
     matplotlib==3.10.5 \
-    numpy==1.26.4 \
     pandas==2.3.1 \
     rdkit==2025.3.5 \
     scikit-learn==1.6.1 \
@@ -135,6 +134,10 @@ pip install \
     torch==2.8.0 \
     prody==2.4.1 \
     ml_collections==0.1.1 \
+    --no-cache-dir
+
+pip install \
+    numpy==1.26.4 \
     --no-cache-dir
 
 echo ""

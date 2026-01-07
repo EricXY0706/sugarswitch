@@ -4,7 +4,7 @@ boltz_ckpt/.gitattributes
 boltz_ckpt/boltz2_aff.ckpt
 boltz_ckpt/boltz2_conf.ckpt
 boltz_ckpt/mols.tar
-LigandMPNN
+LigandMPNN/model_params
 plmc/
 SaProt/weights/PLMs/.gitattributes
 SaProt/weights/PLMs/config.json
@@ -18,3 +18,5 @@ SaProt/foldseek/foldseek
 Spired/model/SPIRED-Fitness.pth
 Spired/model/SPIRED-Stab.pth
 *.out
+test.ipynb
+config_backup.py

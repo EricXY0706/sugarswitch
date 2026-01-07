@@ -3,7 +3,7 @@ from src.rosetta_utils import Rosetta_funcs
 from src.saprot_utils import SaProt_funcs
 from src.spired_utils import Spired_funcs
 
-from util import *
+from src.util import *
 from config import basic_configs, ranker_configs
 
 from pathlib import Path
@@ -53,7 +53,7 @@ def update_infer(
     
     cmd = [
         "boltz", "predict", f"{output_dir}/{filename}.yaml",
-        "--cache", f"{SCRIPT_PATH}/boltz_ckpt",
+        "--cache", f"./boltz_ckpt",
         "--output_format", "pdb",
         "--out_dir", output_dir,
     ]
@@ -217,7 +217,7 @@ def run_prefilters(
         )
         glycan_mover.move(
             protein_structure_file=glycoprotein_structure_file,
-            glycan_structure_file="./G51766DQ.pdb",
+            glycan_structure_file="./src/G51766DQ.pdb",
             output_pdb=glycoprotein_structure_file,
             asn_res_id=s,
             protein_chain=chain,
