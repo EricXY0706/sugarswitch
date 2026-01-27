@@ -20,3 +20,4 @@ Spired/model/SPIRED-Stab.pth
 *.out
 test.ipynb
 config_backup.py
+ESM-LoRA-Gly
