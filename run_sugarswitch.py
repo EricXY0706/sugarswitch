@@ -4,6 +4,8 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src.prefilters import update_infer, run_prefilters
+from src.glycodesign_bb_hallucination import halludesign_bb
+from src.glycodesign_esm_hallucination import halludesign_esm
 
 @click.group()
 def sugarswitch():
@@ -24,12 +26,26 @@ def prefilter(input, out_dir):
     run_prefilters(
         input_fasta_file=input,
         input_structure_file=f"{out_dir}/{Path(input).name.split('.')[0]}.pdb",
-        output_dir=out_dir
+        output_dir=out_dir,
     )
 
 @click.command()
-def design():
-    pass
+@click.option("--input", type=str, help="fasta file for inference", required=True)
+@click.option("--out_dir", default="./output", type=str, help="infer result dir", required=True)
+def design(input, out_dir):
+    
+    # Method 1: SiteSelection -> MotifInsertion -> BoltzBackboneHallucination -> LigandmpnnSeqDesign
+    halludesign_bb(
+        wt_structure_file=f"{out_dir}/{Path(input).name.split('.')[0]}.pdb",
+        output_dir=out_dir,
+    )
+    
+    # Method 2: SiteSelection -> MotifInsertion -> EsmSeqHallucination
+    halludesign_esm(
+        input_fasta_file=input,
+        wt_structure_file=f"{out_dir}/{Path(input).name.split('.')[0]}.pdb",
+        output_dir=out_dir,
+    )
 
 sugarswitch.add_command(prefilter)
 sugarswitch.add_command(design)

@@ -1,4 +1,5 @@
 user_configs = {
+    "name": "protein_name",
     "protein_chain_id": "A",
     "functional_hotspots": [1,2,3,"4-10"],
 }

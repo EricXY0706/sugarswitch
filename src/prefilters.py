@@ -27,7 +27,7 @@ def update_infer(
     """
     if not os.path.exists(input_fasta_file):
         raise FileNotFoundError(f"Input fasta file `{input_fasta_file}` not found.")
-    filename = Path(input_fasta_file).name.split(".")[0]
+    filename = basic_configs["name"]
     msa = MsaFileGenerator(input_fasta_file=input_fasta_file)
     with open(input_fasta_file, "r") as f:
         query = f.read()
