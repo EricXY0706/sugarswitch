@@ -1,18 +1,16 @@
-import argparse
 import random
 import re
 import warnings
 
 from Bio import SeqIO
-import numpy as np
 import torch
 from transformers import EsmTokenizer, EsmForMaskedLM
 from peft import PeftModel
 import gc
 
 from config import basic_configs
-from design_utils import set_seed, sample_sites, GLY_MOTIFS
-from esm_model import EsmModelClassification, ESM_TOKENS
+from src.design_utils import set_seed, sample_sites, GLY_MOTIFS
+from src.esm_model import EsmModelClassification, ESM_TOKENS
 
 eps = -1e9
 
@@ -25,7 +23,7 @@ def prepare_seq(
     modify_chain_id = basic_configs["protein_chain_id"]
     sampled_sites = sample_sites(
         structure_file=wt_structure_file,
-        scoring_df=f"{output_dir}/{basic_configs["name"]}_single_points.csv",
+        scoring_df=f"{output_dir}/{basic_configs['name']}_single_points.csv",
         chain_id=modify_chain_id,
         num_sites_per_comb=num_gly_sites,
     )
@@ -93,12 +91,14 @@ def predict(
     for i, original_pos in enumerate(candidate_positions_for_model):
         if all_predictions[i] == 1:
             print(f"Positive prediction -> Position: {original_pos:<4}, motif: {sequence[original_pos-1:original_pos+2]}, probability: {probs[i][1].item():.4f}")
+        else:
+            print(f"Negative prediction -> Position: {original_pos:<4}, motif: {sequence[original_pos-1:original_pos+2]}, probability: {probs[i][1].item():.4f}")
 
 def hallucinate(
     sequence: str,
     base_model_name: str,
     lora_model_name: str,
-    num_steps: int = 300,
+    num_steps: int = 200,
     lr: float = 1e-2,
     temperature: float = 1.0,
     pll_weight: float = 0.1,
@@ -294,7 +294,7 @@ def halludesign_esm(
     designed_seq = hallucinate(
         sequence=wt_seq,
         base_model_name="facebook/esm2_t30_150M_UR50D",
-        lora_model_name="../ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint",
+        lora_model_name="./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint",
         num_steps=n_steps,
         lr=learning_rate,
         temperature=temperature,
@@ -304,7 +304,7 @@ def halludesign_esm(
     predict(
         sequence=designed_seq,
         base_model_name="facebook/esm2_t30_150M_UR50D",
-        lora_model_name="../ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint",
+        lora_model_name="./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint",
         batch_size=8,
     )
     gc.collect()

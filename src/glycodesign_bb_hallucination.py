@@ -10,7 +10,7 @@ import json
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.util import *
-from design_utils import set_seed, sample_sites, GLY_MOTIFS
+from src.design_utils import set_seed, sample_sites, GLY_MOTIFS
 from config import basic_configs
 
 def backbone_design(
