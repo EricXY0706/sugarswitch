@@ -14,7 +14,6 @@ from src.esm_model import EsmModelClassification, ESM_TOKENS
 
 eps = -1e9
 
-
 def _sample_gumbel(shape, device, eps=1e-9):
     u = torch.rand(shape, device=device)
     return -torch.log(-torch.log(u + eps) + eps)
@@ -151,7 +150,6 @@ def hallucinate(
         if i not in opt_positions and aa in ESM_TOKENS:
             fixed_logits[i, ESM_TOKENS[aa]] = 5.0
 
-    # initialize opt_params with Gumbel noise so gradients are informative
     init_scale = 1.0
     gumbel_init = _sample_gumbel((len(opt_positions), K), device=device) * init_scale
     opt_params = torch.nn.Parameter(gumbel_init.to(dtype=torch.float32))
@@ -239,7 +237,7 @@ def hallucinate(
         loss.backward()
         optimizer.step()
 
-        if (step + 1) % 10 == 0 or step == num_steps - 1:
+        if (step + 1) % 10 == 0 or step == 0:
             print(f"step {step + 1} | GLY loss {gly_loss.item():.4f} | PLL loss {pll_loss.item():.4f} | total loss {loss.item():.4f}", flush=True)
             
     with torch.no_grad():
