@@ -106,7 +106,7 @@ echo "[INFO] Installing DSSP..."
 conda install -c ostrokach dssp -y
 
 # -------------------------------
-# 5. PyRosetta + DSSP
+# 6. LigandMPNN
 # -------------------------------
 echo "[INFO] Installing LigandMPNN..."
 git clone https://github.com/dauparas/LigandMPNN.git
@@ -119,7 +119,7 @@ wget -q https://files.ipd.uw.edu/pub/ligandmpnn/solublempnn_v_48_030.pt -O ./mod
 cd ..
 
 # -------------------------------
-# 6. Python dependencies
+# 7. Python dependencies
 # -------------------------------
 echo "[INFO] Installing Python dependencies..."
 

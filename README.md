@@ -22,6 +22,7 @@
 > ✅ **This procedure will automatically**:
 > - Create and initiate **sugarswitch** conda environment with Python 3.10
 > - Install all the required dependencies
+> - Download Boltz2 weights
 > - Download SaProt and SPIRED weights
 > - Download and install PyRosetta and DSSP
 > - Download and install LigandMPNN
