@@ -18,6 +18,6 @@ SaProt/foldseek/foldseek
 Spired/model/SPIRED-Fitness.pth
 Spired/model/SPIRED-Stab.pth
 *.out
-test.ipynb
+test.*
 config_backup.py
 ESM-LoRA-Gly

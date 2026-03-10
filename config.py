@@ -20,9 +20,9 @@ pipeline_configs = {
     "angle_C1_ND2_CG": 120.0,
     "angle_C2_C1_ND2": 109.5,
     "angle_O5_C1_ND2": 109.5,
-    "dihedral_C1_ND2_CG_CB": {"loop": -120.0, "helix": -180.0, "sheet": 180.0},
-    "dihedral_C2_C1_ND2_CG": {"loop": 120.0, "helix": 140.0, "sheet": 100.0},
-    "dihedral_O5_C1_ND2_CG": {"loop": -120.0, "helix": -100.0, "sheet": -140.0},
+    "dihedral_C1_ND2_CG_CB": {"loop": 178.5, "helix": 178.5, "sheet": 178.5},
+    "dihedral_C2_C1_ND2_CG": {"loop": 90.0, "helix": 90.0, "sheet": 90.0},
+    "dihedral_O5_C1_ND2_CG": {"loop": -95.0, "helix": -95.0, "sheet": -95.0},
 }
 
 basic_configs = {**user_configs, **pipeline_configs}
