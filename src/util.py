@@ -799,7 +799,7 @@ class GlycanMover:
             protein_structure_file (str): Path to PDB file of the protein.
             glycan_structure_file (str): Path to PDB file of the glycan.
             output_pdb (str): Path to save the merged structure.
-            glycan_positions (dict): Mapping of protein chain ID to Asn residue ID for glycan attachment (e.g., {"A": 2}).
+            glycan_positions (dict): Mapping of protein chain ID to Asn residue ID for glycan attachment (e.g., {"A": [2,5]}).
             glycan_chain (str, optional): Chain ID of the glycan. Default is "X".
             nag_res_id (int, optional): Residue ID of the first glycan residue. Default is 2.
         """
@@ -811,44 +811,47 @@ class GlycanMover:
         io.save(output_pdb, Select())
 
         if glycan_positions is not None:
-            for glycan_idx, (protein_chain, asn_res_id) in enumerate(glycan_positions.items(), start=1):
-                ND2, CG, CB = self._get_atom_coords(prot, protein_chain, asn_res_id, ["ND2", "CG", "CB"])
-                C1, C2, O5 = self._get_atom_coords(glyc, glycan_chain, nag_res_id, ["C1", "C2", "O5"])
+            glycan_idx = 1
+            for protein_chain, asn_res_ids in glycan_positions.items():
+                for asn_res_id in asn_res_ids:
+                    ND2, CG, CB = self._get_atom_coords(prot, protein_chain, asn_res_id, ["ND2", "CG", "CB"])
+                    C1, C2, O5 = self._get_atom_coords(glyc, glycan_chain, nag_res_id, ["C1", "C2", "O5"])
 
-                C1_target = self._place_atom(ND2, self.bond_length, self.angle_c1, self.dihedral_c1 + 180, ND2, CG, CB)
-                C2_target = self._place_atom(C1_target, self.bond_length, self.angle_c2, self.dihedral_c2, C1_target, ND2, CG)
-                O5_target = self._place_atom(C1_target, self.bond_length, self.angle_o5, self.dihedral_o5, C1_target, ND2, CG)
+                    C1_target = self._place_atom(ND2, self.bond_length, self.angle_c1, self.dihedral_c1 + 180, ND2, CG, CB)
+                    C2_target = self._place_atom(C1_target, self.bond_length, self.angle_c2, self.dihedral_c2, C1_target, ND2, CG)
+                    O5_target = self._place_atom(C1_target, self.bond_length, self.angle_o5, self.dihedral_o5, C1_target, ND2, CG)
 
-                R_local = self._build_frame(C1, C2, O5)
-                R_target = self._build_frame(C1_target, C2_target, O5_target)
+                    R_local = self._build_frame(C1, C2, O5)
+                    R_target = self._build_frame(C1_target, C2_target, O5_target)
 
-                R = R_target @ R_local.T
-                t = C1_target - R @ C1
+                    R = R_target @ R_local.T
+                    t = C1_target - R @ C1
 
-                for res in glyc[0][glycan_chain]:
-                    for atom in res:
-                        atom.coord = R @ atom.coord + t
+                    for res in glyc[0][glycan_chain]:
+                        for atom in res:
+                            atom.coord = R @ atom.coord + t
 
-                C1_new, O5_new = self._get_atom_coords(glyc, glycan_chain, nag_res_id, ["C1", "O5"])
-                ND2_new = ND2
-                CG_new = CG
+                    C1_new, O5_new = self._get_atom_coords(glyc, glycan_chain, nag_res_id, ["C1", "O5"])
+                    ND2_new = ND2
+                    CG_new = CG
 
-                current_dihedral = self._dihedral_angle(O5_new, C1_new, ND2_new, CG_new)
-                dihedral_diff = self.dihedral_o5 + 180 - current_dihedral
-                if dihedral_diff > 180:
-                    dihedral_diff -= 360
-                elif dihedral_diff < -180:
-                    dihedral_diff += 360
+                    current_dihedral = self._dihedral_angle(O5_new, C1_new, ND2_new, CG_new)
+                    dihedral_diff = self.dihedral_o5 + 180 - current_dihedral
+                    if dihedral_diff > 180:
+                        dihedral_diff -= 360
+                    elif dihedral_diff < -180:
+                        dihedral_diff += 360
 
-                axis = ND2_new - C1_new
-                axis /= np.linalg.norm(axis)
-                R_adjust = self._rotation_matrix(axis, dihedral_diff)
+                    axis = ND2_new - C1_new
+                    axis /= np.linalg.norm(axis)
+                    R_adjust = self._rotation_matrix(axis, dihedral_diff)
 
-                for res in glyc[0][glycan_chain]:
-                    for atom in res:
-                        atom.coord = C1_new + R_adjust @ (atom.coord - C1_new)
+                    for res in glyc[0][glycan_chain]:
+                        for atom in res:
+                            atom.coord = C1_new + R_adjust @ (atom.coord - C1_new)
 
-                self._merge_structures(prot, glyc, glycan_chain, output_pdb, glycan_idx)
+                    self._merge_structures(prot, glyc, glycan_chain, output_pdb, glycan_idx)
+                    glycan_idx += 1
 
 class InteractionCheck:
     def __init__(self) -> None:
