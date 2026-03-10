@@ -211,16 +211,15 @@ def run_prefilters(
             angle_C1=basic_configs["angle_C1_ND2_CG"],
             angle_C2=basic_configs["angle_C2_C1_ND2"],
             angle_O5=basic_configs["angle_O5_C1_ND2"],
-            dihedral_C1=basic_configs["dihedral_C1_ND2_CG_CB"].get(ss_site, -120.0),
-            dihedral_C2=basic_configs["dihedral_C2_C1_ND2_CG"].get(ss_site, 120.0),
-            dihedral_O5=basic_configs["dihedral_O5_C1_ND2_CG"].get(ss_site, -120.0),
+            dihedral_C1=basic_configs["dihedral_C1_ND2_CG_CB"].get(ss_site, 178.5),
+            dihedral_C2=basic_configs["dihedral_C2_C1_ND2_CG"].get(ss_site, 90.0),
+            dihedral_O5=basic_configs["dihedral_O5_C1_ND2_CG"].get(ss_site, -95.0),
         )
         glycan_mover.move(
             protein_structure_file=glycoprotein_structure_file,
             glycan_structure_file="./src/G51766DQ.pdb",
             output_pdb=glycoprotein_structure_file,
-            asn_res_id=s,
-            protein_chain=chain,
+            glycan_positions={chain: s},
         )
         clash_checker = ClashCheck()
         clash_residues = clash_checker.has_clash(

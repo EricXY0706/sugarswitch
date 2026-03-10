@@ -694,13 +694,50 @@ class GlycanMover:
             [2*(b*c + a*d),     a*a + c*c - b*b - d*d, 2*(c*d - a*b)],
             [2*(b*d - a*c),     2*(c*d + a*b),     a*a + d*d - b*b - c*c]
         ])
+    
+    def _change_glycan_serial_id(
+        self,
+        glycan_lines: List[str],
+        glycan_idx: int,
+        glycan_chain: str = "G",
+    ) -> List[str]:
+        """
+        Re-label a glycan block with a unique glycan ID.
+
+                NOTE: PDB chain ID supports only 1 character. We keep chain ID as "G"
+                and store "Gn" in segID field (cols 73-76).
+
+        Args:
+            glycan_lines (List[str]): PDB lines of one glycan block.
+            glycan_idx (int): 1-based index of glycan insertion.
+            glycan_chain (str): One-letter chain ID for glycans (default "G").
+
+        Returns:
+            List[str]: Updated PDB lines for the glycan block.
+        """
+        tag = f"G{glycan_idx}"[-4:]
+        new_lines = []
+
+        for line in glycan_lines:
+            if not (line.startswith("ATOM") or line.startswith("HETATM") or line.startswith("TER")):
+                new_lines.append(line)
+                continue
+
+            padded = line.rstrip("\n").ljust(80)
+            chars = list(padded)
+            chars[21:23] = list(tag)
+            chars[72:76] = list("    ")
+            new_lines.append("".join(chars) + "\n")
+
+        return new_lines
 
     def _merge_structures(
         self,
         protein_structure,
         glycan_structure,
         glycan_chain: str,
-        output_path: str
+        output_path: str,
+        glycan_idx: int,
     ) -> None:
         """
         Merge glycan chain into protein structure and save to file.
@@ -710,6 +747,7 @@ class GlycanMover:
             glycan_structure: Bio.PDB structure object (glycan).
             glycan_chain (str): Chain ID for the glycan to merge.
             output_path (str): Path to write merged PDB file.
+            glycan_idx (int): 1-based index of glycan insertion.
         """
 
         class GlycanSelect(Select):
@@ -720,10 +758,21 @@ class GlycanMover:
         io.save("temp_glycan.pdb", GlycanSelect())
         with open("./temp_glycan.pdb") as f:
             glycan_lines = f.readlines()
-        with open(output_path, "w") as f:
-            io.set_structure(protein_structure)
-            io.save(f)
-        lines = open(output_path).readlines()[:-1]
+        glycan_lines = self._change_glycan_serial_id(
+            glycan_lines=glycan_lines,
+            glycan_idx=glycan_idx,
+        )
+        if os.path.exists(output_path):
+            lines = open(output_path).readlines()
+        else:
+            with open(output_path, "w") as f:
+                io.set_structure(protein_structure)
+                io.save(f)
+            lines = open(output_path).readlines()
+
+        while lines and lines[-1].strip() == "END":
+            lines = lines[:-1]
+
         lines.extend(glycan_lines)
         with open(output_path, "w") as f:
             for line in lines:
@@ -739,10 +788,9 @@ class GlycanMover:
         protein_structure_file: str,
         glycan_structure_file: str,
         output_pdb: str,
-        asn_res_id: int,
-        protein_chain: str = "A",
+        glycan_positions: dict = None,
         glycan_chain: str = "X",
-        nag_res_id: int = 2
+        nag_res_id: int = 2,
     ) -> None:
         """
         Attach a glycan to an Asn residue in a protein structure with specified geometry.
@@ -751,52 +799,56 @@ class GlycanMover:
             protein_structure_file (str): Path to PDB file of the protein.
             glycan_structure_file (str): Path to PDB file of the glycan.
             output_pdb (str): Path to save the merged structure.
-            asn_res_id (int): Residue ID of the Asn to which glycan is attached.
-            protein_chain (str, optional): Chain ID of the protein. Default is "A".
+            glycan_positions (dict): Mapping of protein chain ID to Asn residue ID for glycan attachment (e.g., {"A": 2}).
             glycan_chain (str, optional): Chain ID of the glycan. Default is "X".
             nag_res_id (int, optional): Residue ID of the first glycan residue. Default is 2.
         """
-        
+
         prot, _ = StructureLoader.load_structure(structure_file=protein_structure_file)
         glyc, _ = StructureLoader.load_structure(structure_file=glycan_structure_file)
+        io = PDBIO()
+        io.set_structure(prot)
+        io.save(output_pdb, Select())
 
-        ND2, CG, CB = self._get_atom_coords(prot, protein_chain, asn_res_id, ["ND2", "CG", "CB"])
-        C1, C2, O5 = self._get_atom_coords(glyc, glycan_chain, nag_res_id, ["C1", "C2", "O5"])
+        if glycan_positions is not None:
+            for glycan_idx, (protein_chain, asn_res_id) in enumerate(glycan_positions.items(), start=1):
+                ND2, CG, CB = self._get_atom_coords(prot, protein_chain, asn_res_id, ["ND2", "CG", "CB"])
+                C1, C2, O5 = self._get_atom_coords(glyc, glycan_chain, nag_res_id, ["C1", "C2", "O5"])
 
-        C1_target = self._place_atom(ND2, self.bond_length, self.angle_c1, self.dihedral_c1 + 180, ND2, CG, CB)
-        C2_target = self._place_atom(C1_target, self.bond_length, self.angle_c2, self.dihedral_c2, C1_target, ND2, CG)
-        O5_target = self._place_atom(C1_target, self.bond_length, self.angle_o5, self.dihedral_o5, C1_target, ND2, CG)
+                C1_target = self._place_atom(ND2, self.bond_length, self.angle_c1, self.dihedral_c1 + 180, ND2, CG, CB)
+                C2_target = self._place_atom(C1_target, self.bond_length, self.angle_c2, self.dihedral_c2, C1_target, ND2, CG)
+                O5_target = self._place_atom(C1_target, self.bond_length, self.angle_o5, self.dihedral_o5, C1_target, ND2, CG)
 
-        R_local = self._build_frame(C1, C2, O5)
-        R_target = self._build_frame(C1_target, C2_target, O5_target)
+                R_local = self._build_frame(C1, C2, O5)
+                R_target = self._build_frame(C1_target, C2_target, O5_target)
 
-        R = R_target @ R_local.T
-        t = C1_target - R @ C1
+                R = R_target @ R_local.T
+                t = C1_target - R @ C1
 
-        for res in glyc[0][glycan_chain]:
-            for atom in res:
-                atom.coord = R @ atom.coord + t
+                for res in glyc[0][glycan_chain]:
+                    for atom in res:
+                        atom.coord = R @ atom.coord + t
 
-        C1_new, O5_new = self._get_atom_coords(glyc, glycan_chain, nag_res_id, ["C1", "O5"])
-        ND2_new = ND2
-        CG_new = CG
+                C1_new, O5_new = self._get_atom_coords(glyc, glycan_chain, nag_res_id, ["C1", "O5"])
+                ND2_new = ND2
+                CG_new = CG
 
-        current_dihedral = self._dihedral_angle(O5_new, C1_new, ND2_new, CG_new)
-        dihedral_diff = self.dihedral_o5 + 180 - current_dihedral
-        if dihedral_diff > 180:
-            dihedral_diff -= 360
-        elif dihedral_diff < -180:
-            dihedral_diff += 360
+                current_dihedral = self._dihedral_angle(O5_new, C1_new, ND2_new, CG_new)
+                dihedral_diff = self.dihedral_o5 + 180 - current_dihedral
+                if dihedral_diff > 180:
+                    dihedral_diff -= 360
+                elif dihedral_diff < -180:
+                    dihedral_diff += 360
 
-        axis = ND2_new - C1_new
-        axis /= np.linalg.norm(axis)
-        R_adjust = self._rotation_matrix(axis, dihedral_diff)
+                axis = ND2_new - C1_new
+                axis /= np.linalg.norm(axis)
+                R_adjust = self._rotation_matrix(axis, dihedral_diff)
 
-        for res in glyc[0][glycan_chain]:
-            for atom in res:
-                atom.coord = C1_new + R_adjust @ (atom.coord - C1_new)
+                for res in glyc[0][glycan_chain]:
+                    for atom in res:
+                        atom.coord = C1_new + R_adjust @ (atom.coord - C1_new)
 
-        self._merge_structures(prot, glyc, glycan_chain, output_pdb)
+                self._merge_structures(prot, glyc, glycan_chain, output_pdb, glycan_idx)
 
 class InteractionCheck:
     def __init__(self) -> None:

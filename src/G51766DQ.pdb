@@ -11,9 +11,7 @@ REMARK   Nat Methods 21, 2117–2127 (2024).  https://doi.org/10.1038/s41592-024
 REMARK   Callum M. Ives* and Ojas Singh*, Silvia D’Andrea, Carl A. Fogarty, 
 REMARK   Aoife M. Harbison, Akash Satheesan, Beatrice Tropea, Elisa Fadda
 REMARK   Data available under CC BY-NC-ND 4.0 for academic use only.
-REMARK   Contact elisa.fadda@soton.ac.uk for commercial licence.
-ATOM      1  HO1 ROH X   1      23.068  34.368  21.343  1.00  0.00      SYST H  
-ATOM      2  O1  ROH X   1      22.250  33.900  21.494  1.00  0.00      SYST O  
+REMARK   Contact elisa.fadda@soton.ac.uk for commercial licence. 
 ATOM      3  C1  NDG X   2      22.201  32.884  20.526  1.00  0.00      SYST C  
 ATOM      4  H1  NDG X   2      21.905  33.177  19.520  1.00  0.00      SYST H  
 ATOM      5  C2  NDG X   2      21.225  31.743  20.971  1.00  0.00      SYST C  
