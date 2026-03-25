@@ -1338,3 +1338,385 @@ def plot_heatmap(
     plt.rcParams["ytick.major.pad"] = 3.5
     plt.rcParams["axes.grid"] = False
     plt.savefig(out_file, dpi=300, bbox_inches="tight")
+
+def _compress_ranges(positions: list) -> str:
+    """Compress sorted integer positions into range strings like '1-5, 8, 10-15'."""
+    if not positions:
+        return ""
+    ranges = []
+    start = positions[0]
+    end = positions[0]
+    for p in positions[1:]:
+        if p == end + 1:
+            end = p
+        else:
+            ranges.append(f"{start}-{end}" if start != end else str(start))
+            start = end = p
+    ranges.append(f"{start}-{end}" if start != end else str(start))
+    return ", ".join(ranges)
+
+def _generate_heatmap_base64(df_file: str) -> str:
+    """Generate heatmap as base64-encoded PNG string from CSV results."""
+    import base64
+    from io import BytesIO
+
+    df = pd.read_csv(df_file)
+    higher_is_better = {
+        "ConservationScore": False, "CouplingScore": False,
+        "SASA_i": True, "SASA_i+1": True, "SASA_i+2": True,
+        "SASA_(i-1:i+1)": True, "SASA_(i:i+2)": True,
+        "ddG": True, "dTm": True,
+        "ddG_NXS": True, "dTm_NXS": True, "ddG_NXT": True, "dTm_NXT": True,
+        "MutScore": True, "MutScore_NXS": True, "MutScore_NXT": True,
+    }
+    for c, h in higher_is_better.items():
+        if c in df.columns and not h:
+            df[c] = -df[c]
+    for col in ["Site", "SS", "Clash"]:
+        if col in df.columns:
+            del df[col]
+    df.set_index("Mutation", inplace=True)
+
+    scaler = MinMaxScaler()
+    df_normalized = pd.DataFrame(
+        scaler.fit_transform(df.values),
+        columns=df.columns,
+        index=df.index,
+    )
+
+    fig, ax = plt.subplots(figsize=(8.5, max(3, len(df) * 0.35 + 1.5)))
+    three_color_cmap = mcolors.LinearSegmentedColormap.from_list(
+        "three_color_cmap", ["#91C8F6", "#FDF6ED", "#F6A6A1"], N=256,
+    )
+    sns.heatmap(
+        df_normalized, cmap=three_color_cmap, cbar=True,
+        annot_kws={"size": 4}, vmin=0, vmax=1, ax=ax,
+    )
+    ax.set_title("Single Point Mutations", fontsize=12)
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("utf-8")
+
+def generate_prefilter_report(
+    input_fasta_file: str,
+    query_sequence: str,
+    editable_regions: set,
+    df_file: str,
+    output_html: str,
+):
+    """
+    Generate a self-contained HTML report from prefilter results.
+
+    Args:
+        input_fasta_file: Path to the input FASTA file.
+        query_sequence: The query protein sequence string.
+        editable_regions: Set of 1-based positions that are editable.
+        df_file: Path to the CSV results file (*_single_points.csv).
+        output_html: Path to write the HTML report.
+    """
+    df = pd.read_csv(df_file)
+
+    # --- heatmap ---
+    heatmap_b64 = _generate_heatmap_base64(df_file)
+
+    # --- sequence with highlights ---
+    line_width = 50
+    seq_lines = []
+    for start in range(0, len(query_sequence), line_width):
+        end = min(start + line_width, len(query_sequence))
+        pos_label = f'<span class="pos-num">{start + 1:>5}</span> '
+        chars = []
+        for i in range(start, end):
+            pos = i + 1
+            aa = query_sequence[i]
+            if pos in editable_regions:
+                chars.append(
+                    f'<span class="aa editable" title="Pos {pos} &#10004; editable">{aa}</span>'
+                )
+            else:
+                chars.append(
+                    f'<span class="aa non-edit" title="Pos {pos} &#10008; non-editable">{aa}</span>'
+                )
+            if (i - start + 1) % 10 == 0 and i + 1 != end:
+                chars.append('<span class="gap"> </span>')
+        end_label = f' <span class="pos-num">{end}</span>'
+        seq_lines.append(pos_label + "".join(chars) + end_label)
+    sequence_html = "\n".join(seq_lines)
+
+    # --- editable regions summary ---
+    editable_sorted = sorted(editable_regions)
+    non_editable = sorted(set(range(1, len(query_sequence) + 1)) - editable_regions)
+    editable_str = _compress_ranges(editable_sorted)
+    non_editable_str = _compress_ranges(non_editable)
+
+    # --- results table ---
+    table_df = df.copy()
+    table_df["Clash"] = table_df["Clash"].apply(
+        lambda x: "None" if pd.isna(x) or x == "None" or x == "[]" else str(x)
+    )
+    table_html = table_df.to_html(
+        index=False, classes="data-table", border=0,
+        float_format=lambda x: f"{x:.3f}",
+    )
+
+    # --- assemble HTML ---
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SugarSwitch Prefilter Report</title>
+<style>
+:root {{
+    --bg: #f5f7fa;
+    --card: #ffffff;
+    --accent: #4a76a8;
+    --accent-light: #e8f0fe;
+    --edit-bg: #d4edda;
+    --edit-border: #28a745;
+    --nonedit-bg: #f8f9fa;
+    --text: #2c3e50;
+    --muted: #6c757d;
+    --border: #dee2e6;
+    --shadow: 0 2px 8px rgba(0,0,0,0.08);
+}}
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 20px;
+}}
+.container {{ max-width: 1200px; margin: 0 auto; }}
+header {{
+    background: linear-gradient(135deg, #4a76a8 0%, #6a9fd8 100%);
+    color: #fff;
+    padding: 28px 36px;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}}
+header h1 {{ font-size: 24px; font-weight: 700; }}
+header p {{ opacity: 0.9; margin-top: 4px; font-size: 14px; }}
+.card {{
+    background: var(--card);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+}}
+.card h2 {{
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-light);
+}}
+.info-grid {{
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 8px 16px;
+    font-size: 14px;
+}}
+.info-grid .label {{ font-weight: 600; color: var(--muted); }}
+.info-grid .value {{ word-break: break-all; }}
+
+/* sequence viewer */
+.seq-viewer {{
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+    font-size: 13px;
+    line-height: 2;
+    white-space: pre;
+    overflow-x: auto;
+    padding: 16px;
+    background: #fafbfc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}}
+.pos-num {{ color: var(--muted); font-size: 11px; user-select: none; }}
+.aa {{
+    display: inline-block;
+    width: 1.1em;
+    text-align: center;
+    border-radius: 3px;
+    cursor: default;
+    transition: transform 0.1s;
+}}
+.aa:hover {{ transform: scale(1.3); z-index: 1; position: relative; }}
+.editable {{
+    background: var(--edit-bg);
+    color: #155724;
+    font-weight: 600;
+    border-bottom: 2px solid var(--edit-border);
+}}
+.non-edit {{
+    background: var(--nonedit-bg);
+    color: #888;
+}}
+.gap {{ width: 0.5em; display: inline-block; }}
+
+.legend {{
+    display: flex;
+    gap: 20px;
+    margin-top: 12px;
+    font-size: 13px;
+}}
+.legend-item {{ display: flex; align-items: center; gap: 6px; }}
+.legend-swatch {{
+    display: inline-block;
+    width: 16px; height: 16px;
+    border-radius: 3px;
+}}
+.swatch-edit {{ background: var(--edit-bg); border: 1px solid var(--edit-border); }}
+.swatch-nonedit {{ background: var(--nonedit-bg); border: 1px solid var(--border); }}
+
+/* regions */
+.region-box {{
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    word-break: break-word;
+}}
+.region-edit {{ background: #d4edda; border-left: 4px solid #28a745; }}
+.region-nonedit {{ background: #fff3cd; border-left: 4px solid #ffc107; }}
+.region-label {{ font-weight: 600; margin-bottom: 2px; font-size: 13px; }}
+
+.stats {{
+    display: flex;
+    gap: 16px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+}}
+.stat {{
+    background: var(--accent-light);
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+}}
+.stat strong {{ color: var(--accent); }}
+
+/* table */
+.table-wrap {{ overflow-x: auto; }}
+.data-table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    white-space: nowrap;
+}}
+.data-table th {{
+    background: var(--accent);
+    color: #fff;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+}}
+.data-table td {{
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+}}
+.data-table tr:hover {{ background: var(--accent-light); }}
+.data-table tr:nth-child(even) {{ background: #f8f9fa; }}
+.data-table tr:nth-child(even):hover {{ background: var(--accent-light); }}
+
+/* heatmap */
+.heatmap-img {{
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}}
+footer {{
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 24px;
+    padding: 16px;
+}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+    <h1>SugarSwitch &mdash; Prefilter Report</h1>
+    <p>N-linked glycosylation site screening results</p>
+</header>
+
+<!-- Input Info -->
+<div class="card">
+    <h2>Input Information</h2>
+    <div class="info-grid">
+        <div class="label">FASTA File</div>
+        <div class="value">{input_fasta_file}</div>
+        <div class="label">Sequence Length</div>
+        <div class="value">{len(query_sequence)} residues</div>
+        <div class="label">Editable Sites</div>
+        <div class="value">{len(editable_sorted)} / {len(query_sequence)}</div>
+        <div class="label">Candidates</div>
+        <div class="value">{len(df)} mutations evaluated</div>
+    </div>
+</div>
+
+<!-- Query Sequence -->
+<div class="card">
+    <h2>Query Sequence</h2>
+    <div class="seq-viewer">
+{sequence_html}
+    </div>
+    <div class="legend">
+        <div class="legend-item"><span class="legend-swatch swatch-edit"></span> Editable</div>
+        <div class="legend-item"><span class="legend-swatch swatch-nonedit"></span> Non-editable (functional / conserved / co-evolving / low-SASA)</div>
+    </div>
+</div>
+
+<!-- Editable Regions -->
+<div class="card">
+    <h2>Editable Regions</h2>
+    <div class="stats">
+        <div class="stat"><strong>{len(editable_sorted)}</strong> editable positions</div>
+        <div class="stat"><strong>{len(non_editable)}</strong> filtered out</div>
+    </div>
+    <div class="region-box region-edit">
+        <div class="region-label">Editable positions:</div>
+        {editable_str}
+    </div>
+    <div class="region-box region-nonedit">
+        <div class="region-label">Non-editable positions:</div>
+        {non_editable_str}
+    </div>
+</div>
+
+<!-- Results Table -->
+<div class="card">
+    <h2>Ranked Mutation Results</h2>
+    <div class="table-wrap">
+        {table_html}
+    </div>
+</div>
+
+<!-- Heatmap -->
+<div class="card">
+    <h2>Heatmap</h2>
+    <img class="heatmap-img" src="data:image/png;base64,{heatmap_b64}" alt="Single Point Mutations Heatmap">
+</div>
+
+<footer>
+    Generated by SugarSwitch &bull; Prefilter Pipeline
+</footer>
+
+</div>
+</body>
+</html>"""
+
+    with open(output_html, "w") as f:
+        f.write(html)
+    logger.info(f"HTML report saved to {output_html}")
