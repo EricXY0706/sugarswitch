@@ -12,65 +12,19 @@ import pandas as pd
 import numpy as np
 from Bio import SeqIO
 import os
-import subprocess
-import yaml
 import warnings
 
 SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 
-def update_infer(
-        input_fasta_file: str,
-        output_dir: str,
-) -> None:
-    """
-    Update the infer result dir with the input fasta file.
-    """
-    if not os.path.exists(input_fasta_file):
-        raise FileNotFoundError(f"Input fasta file `{input_fasta_file}` not found.")
-    filename = basic_configs["name"]
-    msa = MsaFileGenerator(input_fasta_file=input_fasta_file)
-    with open(input_fasta_file, "r") as f:
-        query = f.read()
-    msa.run_mmseqs2(x=query, prefix=f"{output_dir}/msa")
-    
-    # Boltz prediction
-    seqs = {rec.id: (str(rec.seq), int(rec.description.split(" ")[-1].split(":")[-1])) for rec in SeqIO.parse(input_fasta_file, "fasta")}
-    chain_ptr = 0
-    out = []
-    for name, (seq, num) in seqs.items():
-        ids = FlowList(CHAIN_IDS[chain_ptr : chain_ptr + num])
-        out.append({
-            "protein": {
-                "id": ids,
-                "sequence": seq,
-                "msa": f"{output_dir}/msa/uniref_{len(out)+1}.a3m",
-            }
-        })
-        chain_ptr += num
-
-    with open(f"{output_dir}/{filename}.yaml", "w") as f:
-        yaml.safe_dump({"version": 1, "sequences": out}, f, sort_keys=False, indent=2)
-    
-    cmd = [
-        "boltz", "predict", f"{output_dir}/{filename}.yaml",
-        "--cache", f"./boltz_ckpt",
-        "--output_format", "pdb",
-        "--out_dir", output_dir,
-    ]
-    subprocess.run(cmd, check=True)
-    subprocess.run(f"mv {output_dir}/boltz_results_{filename}/predictions/{filename}/{filename}_model_0.pdb {output_dir}/{filename}.pdb", shell=True)
-    subprocess.run(f"rm -r {output_dir}/boltz_results_{filename}", shell=True)
-    subprocess.run(f"rm -f {output_dir}/{filename}.yaml", shell=True)
-
 def run_prefilters(
-        input_fasta_file: str,
-        input_structure_file: str,
-        output_dir: str,
+    input_fasta_file: str,
+    output_dir: str,
 ) -> None:
     """
     Run prefilters on the input fasta file.
     """
     warnings.filterwarnings("ignore")
+    structure_file = update_infer(input_fasta_file=input_fasta_file, output_dir=output_dir)
     chain = basic_configs["protein_chain_id"]
     query_sequence = FastaLoader.get_sequence(sequence_file=input_fasta_file, chain_id=chain)
     chains_nums = [int(rec.description.split(" ")[-1].split(":")[-1]) for rec in SeqIO.parse(input_fasta_file, "fasta")]
@@ -86,16 +40,16 @@ def run_prefilters(
             aln_file_id = i + 1
 
     filename = Path(input_fasta_file).name.split(".")[0]
-    ss = StructureLoader.get_secondary_structure(structure_file=input_structure_file, chain_id=chain)
+    ss = StructureLoader.get_secondary_structure(structure_file=structure_file, chain_id=chain)
 
     # Filtering out interacting sites with the given hotspots
     interaction_checker = InteractionCheck()
     interchain_interacting_sites = interaction_checker.get_inter_interaction_aa(
-        structure_file=input_structure_file,
+        structure_file=structure_file,
         chain_id=chain,
     )
     hotspots_interacting_sites = interaction_checker.get_intra_interaction_aa(
-        structure_file=input_structure_file,
+        structure_file=structure_file,
         chain_id=chain,
         positions=basic_configs["functional_hotspots"],
         dist_threshold=basic_configs["Cb_interaction_threshold"],
@@ -107,7 +61,7 @@ def run_prefilters(
     skip_evc = False
     input_alignment_file = f"{output_dir}/msa/uniref_{aln_file_id}.a3m"
     if len(list(SeqIO.parse(input_alignment_file, "fasta"))) != 1:
-        evc = EVC_funcs(alignment_file=input_alignment_file, structure_file=input_structure_file, chain_id=chain, out_dir=f"{output_dir}/evc/")
+        evc = EVC_funcs(alignment_file=input_alignment_file, structure_file=structure_file, chain_id=chain, out_dir=f"{output_dir}/evc/")
         evc.run_evc(
             focus_sequence=filename,
             min_sequence_distance=basic_configs["evc_min_sequence_distance"],
@@ -129,7 +83,7 @@ def run_prefilters(
     # Filtering out the low SASA sites
     rosetta = Rosetta_funcs()
     sasa_cutoff, low_sasa_sites, sasa_index_dict = rosetta.get_SASA(
-        structure_file=input_structure_file,
+        structure_file=structure_file,
         cutoff=basic_configs["sasa_cutoff"],
         chain=chain,
     )
@@ -160,20 +114,20 @@ def run_prefilters(
 
         mut_score_s = saprot.mutation_score(
             query_seq=query_sequence,
-            structure_file=input_structure_file,
+            structure_file=structure_file,
             chain_id=chain,
             mutations={s: "N"},
         )
         if s != len(query_sequence) and s != (len(query_sequence) - 1):
             mut_score_s_next2_S = saprot.mutation_score(
                 query_seq=query_sequence,
-                structure_file=input_structure_file,
+                structure_file=structure_file,
                 chain_id=chain,
                 mutations={s: "N", s+2: "S"},
             )
             mut_score_s_next2_T = saprot.mutation_score(
                 query_seq=query_sequence,
-                structure_file=input_structure_file,
+                structure_file=structure_file,
                 chain_id=chain,
                 mutations={s: "N", s+2: "T"},
             )
@@ -197,16 +151,14 @@ def run_prefilters(
             ddG_next2_S, dTm_next2_S, ddG_next2_T, dTm_next2_T = ddG_s, dTm_s, ddG_s, dTm_s
         
         rosetta.mutate(
-            structure_file=input_structure_file,
+            structure_file=structure_file,
             output_file=glycoprotein_structure_file,
-            chain_id=chain,
-            mutate_position=s,
-            mutation="N",
+            mutations={f"{chain}{s}": "N"},
         )
         ss_dict = StructureLoader.get_secondary_structure(structure_file=glycoprotein_structure_file, chain_id=chain)
         ss_site = SS_TAG[ss_dict[(chain, s)]][-1]
         
-        glycan_mover = GlycanMover(
+        glycanmover = GlycanMover(
             bond_length=basic_configs["bond_length_C1_ND2"],
             angle_C1=basic_configs["angle_C1_ND2_CG"],
             angle_C2=basic_configs["angle_C2_C1_ND2"],
@@ -215,11 +167,11 @@ def run_prefilters(
             dihedral_C2=basic_configs["dihedral_C2_C1_ND2_CG"].get(ss_site, 90.0),
             dihedral_O5=basic_configs["dihedral_O5_C1_ND2_CG"].get(ss_site, -95.0),
         )
-        glycan_mover.move(
+        glycanmover.move(
             protein_structure_file=glycoprotein_structure_file,
             glycan_structure_file="./src/G51766DQ.pdb",
             output_pdb=glycoprotein_structure_file,
-            glycan_positions={chain: s},
+            glycan_positions={chain: [s]},
         )
         clash_checker = ClashCheck()
         clash_residues = clash_checker.has_clash(
