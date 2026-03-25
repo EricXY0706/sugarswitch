@@ -201,14 +201,14 @@ def run_prefilters(
         chain_id=chain,
         df_file=df_file,
     )
-    # plot_heatmap(
-    #     df_file=df_file,
-    #     out_file=f"{output_dir}/{filename}_single_points_heatmap.pdf",
-    # )
-    generate_prefilter_report(
+    reporter = prefilter_report(
         input_fasta_file=input_fasta_file,
         query_sequence=query_sequence,
         editable_regions=editable_regions,
         df_file=df_file,
         output_html=f"{output_dir}/{filename}_prefilter_report.html",
     )
+    # reporter.plot_heatmap(
+    #     out_file=f"{output_dir}/{filename}_single_points_heatmap.pdf",
+    # )
+    reporter.generate_prefilter_report()
