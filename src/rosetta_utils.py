@@ -4,9 +4,12 @@ from pyrosetta import init, Pose
 import pyrosetta.rosetta.core.import_pose as ip
 from pyrosetta.toolbox.mutants import mutate_residue
 
-from src.util import StructureLoader, StructureFileEditor
+from src.util import StructureLoader, StructureFileEditor, InteractionCheck
 from Bio.PDB import PDBIO
 from io import StringIO
+from itertools import product
+from pathlib import Path
+import os
 
 class Rosetta_funcs:
 
@@ -91,21 +94,71 @@ class Rosetta_funcs:
         self,
         structure_file: str,
         output_file: str,
-        chain_id: str,
-        mutate_position: int, 
-        mutation: str
+        mutations: dict,
     ) -> None:
         '''
         Mutate the structure file.
         
         structure_file: Path to the structure file.
         output_file: Path to the output file.
-        chain_id: Chain ID to be mutated.
-        mutate_position: Position to be mutated, starting from 1.
-        mutation: AA after mutation
+        mutations: Positions to be mutated, starting from 1. e.g. {"A1": "C", "B3": "D"}
         '''
 
         pose = self.get_pose(structure_file)
-        target_pose_index = pose.pdb_info().pdb2pose(chain_id, mutate_position)
-        mutate_residue(pack_or_pose=pose, mutant_position=target_pose_index, mutant_aa=mutation, pack_radius=8.0)
+        for location, mutation in mutations.items():
+            chain_id, site = location[0], int(location[1:])
+            target_pose_index = pose.pdb_info().pdb2pose(chain_id, site)
+            mutate_residue(pack_or_pose=pose, mutant_position=target_pose_index, mutant_aa=mutation, pack_radius=8.0)
         pose.dump_pdb(output_file)
+
+class SSBuilder:
+    def __init__(self) -> None:
+        pass
+    
+    def _find_interchain_potential_ss_pairs(
+        self,
+        structure_file: str,
+        build_inter_chain_ss: bool = True,
+    ):
+        interacation_checker = InteractionCheck()
+        chain_seq_dict = StructureLoader.get_sequences(structure_file)
+        
+        chain_potential_ss_sites_dict = dict()
+        if build_inter_chain_ss:
+            for chain_id, seq in chain_seq_dict.items():
+                interaction_aa = interacation_checker.get_inter_interaction_aa(structure_file=structure_file, chain_id=chain_id)
+                chain_potential_ss_sites_dict[chain_id] = interaction_aa
+                
+        chains = sorted(chain_potential_ss_sites_dict.keys())
+        sites = [sorted(chain_potential_ss_sites_dict[c]) for c in chains]
+        combos = product(*sites)
+        pairs = [
+            "_".join(f"{k}{v}" for k, v in zip(chains, combo))
+            for combo in combos
+        ]
+        
+        return pairs
+    
+    def potential_ss_check(
+        self,
+    ):
+        pass
+    
+    def mutate_and_build(
+        self,
+        structure_file: str,
+        output_dir: str,
+        build_inter_chain_ss: bool = True,
+        
+    ):
+        filename = Path(structure_file).stem
+        rosetta = Rosetta_funcs()
+        ss_pairs = self._find_interchain_potential_ss_pairs(structure_file=structure_file, build_inter_chain_ss=build_inter_chain_ss)
+        
+        for pair in ss_pairs:
+            chain1, site1 = pair.split("_")[0][0], int(pair.split("_")[0][1])
+            chain2, site2 = pair.split("_")[1][0], int(pair.split("_")[1][1])
+            output_file = f"{output_dir}/{filename}_SS_{chain1}{site1}_{chain2}{site2}.pdb"
+            rosetta.mutate(structure_file=structure_file, output_file=output_file, mutations={f"{chain1}{site1}": "C", f"{chain2}{site2}": "C"})
+            if not self.potential_ss_check:
+                os.remove(output_file)

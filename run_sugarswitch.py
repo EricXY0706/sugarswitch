@@ -3,7 +3,7 @@ import click
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from src.prefilters import update_infer, run_prefilters
+from src.prefilters import run_prefilters
 from src.glycodesign_bb_hallucination import halludesign_bb
 from src.glycodesign_esm_hallucination import halludesign_esm
 
@@ -17,38 +17,36 @@ def sugarswitch():
 def prefilter(input, out_dir):
 
     os.makedirs(out_dir, exist_ok=True)
-
-    update_infer(
-        input_fasta_file=input,
-        output_dir=out_dir,
-    )
-
     run_prefilters(
         input_fasta_file=input,
-        input_structure_file=f"{out_dir}/{Path(input).name.split('.')[0]}.pdb",
         output_dir=out_dir,
     )
 
 @click.command()
 @click.option("--input", type=str, help="fasta file for inference", required=True)
-@click.option("--out_dir", default="./output", type=str, help="infer result dir", required=True)
-def design(input, out_dir):
+@click.option("--out_dir", default="./output", type=str, help="infer result dir", required=False)
+@click.option("--num_designs", default=1, type=int, help="number of designs to generate", required=True)
+@click.option("--num_gly_sites", default=5, type=int, help="number of glycosylation sites to design", required=True)
+def designer(input, out_dir, num_designs, num_gly_sites):
     
-    # Method 1: SiteSelection -> MotifInsertion -> BoltzBackboneHallucination -> LigandmpnnSeqDesign
-    halludesign_bb(
-        wt_structure_file=f"{out_dir}/{Path(input).name.split('.')[0]}.pdb",
-        output_dir=out_dir,
-    )
-    
-    # Method 2: SiteSelection -> MotifInsertion -> EsmSeqHallucination
     halludesign_esm(
         input_fasta_file=input,
         wt_structure_file=f"{out_dir}/{Path(input).name.split('.')[0]}.pdb",
         output_dir=out_dir,
+        num_designs=num_designs,
+        num_gly_sites=num_gly_sites,
     )
 
+@click.command()
+@click.option("--input", type=str, help="", required=True)
+@click.option("--out_dir", default="./output", type=str, help="infer result dir", required=True)
+def ssbuilder(input, out_dir):
+    
+    pass
+
 sugarswitch.add_command(prefilter)
-sugarswitch.add_command(design)
+sugarswitch.add_command(designer)
+sugarswitch.add_command(ssbuilder)
 
 if __name__ == "__main__":
     sugarswitch()
