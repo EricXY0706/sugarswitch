@@ -4,8 +4,7 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src.prefilters import run_prefilters
-from src.glycodesign_bb_hallucination import halludesign_bb
-from src.glycodesign_esm_hallucination import halludesign_esm
+from src.designers import halludesign_esm
 
 @click.group()
 def sugarswitch():

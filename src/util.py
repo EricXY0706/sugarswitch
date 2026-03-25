@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import subprocess
 import re
 import time
@@ -18,8 +19,6 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import seaborn as sns
 from sklearn.preprocessing import MinMaxScaler
-from pathlib import Path
-
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -566,6 +565,7 @@ def update_infer(
     subprocess.run(f"mv {output_dir}/boltz_results_{filename}/predictions/{filename}/{filename}_model_0.pdb {output_dir}/{filename}.pdb", shell=True)
     subprocess.run(f"rm -r {output_dir}/boltz_results_{filename}", shell=True)
     subprocess.run(f"rm -f {output_dir}/{filename}.yaml", shell=True)
+    shutil.rmtree(f"{output_dir}/msa{suffix}")
     
     return f"{output_dir}/{filename}.pdb"
     
@@ -1714,6 +1714,375 @@ class prefilter_report:
     </div>
     </body>
     </html>"""
+
+        with open(self.output_html, "w") as f:
+            f.write(html)
+
+
+class designer_report:
+    def __init__(
+        self,
+        input_fasta_file: str,
+        wt_seq: str,
+        asn_sites: dict,
+        designed_seqs: List[str],
+        pos_probs_list: List[dict],
+        output_html: str,
+    ):
+        """
+        Generate an HTML report for halludesign_esm results.
+
+        Args:
+            input_fasta_file: Path to input FASTA file.
+            wt_seq: Wild-type sequence (with X replaced by NP).
+            asn_sites: Dict mapping chain_id -> list of Asn positions, e.g. {"A": [10, 50]}.
+            designed_seqs: List of designed sequences.
+            pos_probs_list: List of dicts, each mapping position -> probability for a designed sequence.
+            output_html: Output HTML file path.
+        """
+        self.input_fasta_file = input_fasta_file
+        self.wt_seq = wt_seq
+        self.asn_sites = asn_sites
+        self.designed_seqs = designed_seqs
+        self.pos_probs_list = pos_probs_list
+        self.output_html = output_html
+
+    def _format_seq_html(self, seq: str, pos_probs: dict = None, label: str = "Sequence", highlight_positions: set = None):
+        """Render a sequence as HTML with optional position highlighting and probability tooltips."""
+        line_width = 50
+        seq_lines = []
+        for start in range(0, len(seq), line_width):
+            end = min(start + line_width, len(seq))
+            pos_label = f'<span class="pos-num">{start + 1:>5}</span> '
+            chars = []
+            for i in range(start, end):
+                pos = i + 1
+                aa = seq[i]
+                if pos_probs and pos in pos_probs:
+                    prob = pos_probs[pos]
+                    prob_pct = f"{prob * 100:.1f}%"
+                    css_class = "aa pos-hit" if prob >= 0.5 else "aa pos-miss"
+                    chars.append(
+                        f'<span class="{css_class}" data-pos="{pos}" data-prob="{prob:.4f}" data-pct="{prob_pct}">{aa}</span>'
+                    )
+                elif highlight_positions and pos in highlight_positions:
+                    chars.append(
+                        f'<span class="aa asn-site" data-pos="{pos}" data-info="Possible glycosylation site">{aa}</span>'
+                    )
+                else:
+                    chars.append(
+                        f'<span class="aa aa-default" data-pos="{pos}">{aa}</span>'
+                    )
+                if (i - start + 1) % 10 == 0 and i + 1 != end:
+                    chars.append('<span class="gap"> </span>')
+            end_label = f' <span class="pos-num">{end}</span>'
+            seq_lines.append(pos_label + "".join(chars) + end_label)
+        return "\n".join(seq_lines)
+
+    def generate_designer_report(self):
+        """Generate a self-contained HTML report for halludesign_esm results."""
+
+        # Collect all Asn positions across chains
+        all_asn_positions = set()
+        for chain_id, positions in self.asn_sites.items():
+            all_asn_positions.update(positions)
+        asn_sites_str = "; ".join(
+            f"Chain {chain}: {', '.join(str(p) for p in sorted(positions))}"
+            for chain, positions in self.asn_sites.items()
+        )
+
+        # WT sequence HTML
+        wt_seq_html = self._format_seq_html(self.wt_seq, highlight_positions=all_asn_positions, label="WT Sequence")
+
+        # Designed sequences HTML
+        designed_cards = []
+        for idx, (d_seq, d_probs) in enumerate(zip(self.designed_seqs, self.pos_probs_list)):
+            seq_html = self._format_seq_html(d_seq, pos_probs=d_probs, label=f"Design {idx + 1}")
+
+            # Mutation summary
+            mutations = []
+            for i, (wt_aa, d_aa) in enumerate(zip(self.wt_seq, d_seq)):
+                if wt_aa != d_aa:
+                    mutations.append(f"{wt_aa}{i+1}{d_aa}")
+            mut_str = ", ".join(mutations) if mutations else "None"
+
+            # Prob summary table
+            prob_rows = ""
+            for pos in sorted(d_probs.keys()):
+                prob = d_probs[pos]
+                motif = d_seq[pos-1:pos+2] if pos-1+3 <= len(d_seq) else d_seq[pos-1:]
+                pred = "Positive" if prob >= 0.5 else "Negative"
+                prob_rows += f"<tr><td>{pos}</td><td>{motif}</td><td>{prob:.4f}</td><td>{pred}</td></tr>\n"
+
+            designed_cards.append(f"""
+    <div class="card">
+        <h2>Design {idx + 1}</h2>
+        <div class="info-grid" style="margin-bottom:14px;">
+            <div class="label">Mutations</div>
+            <div class="value">{mut_str}</div>
+        </div>
+        <div class="seq-viewer">
+{seq_html}
+        </div>
+        <div class="legend">
+            <div class="legend-item"><span class="legend-swatch swatch-pos-hit"></span> Candidate pos (prob &ge; 0.5)</div>
+            <div class="legend-item"><span class="legend-swatch swatch-pos-miss"></span> Candidate pos (prob &lt; 0.5)</div>
+            <div class="legend-item"><span class="legend-swatch swatch-default"></span> Other residues</div>
+        </div>
+        <h3 style="margin-top:16px;font-size:14px;color:#4a76a8;">Glycosylation Predictions</h3>
+        <div class="table-wrap" style="margin-top:8px;">
+            <table class="data-table">
+                <thead><tr><th>Position</th><th>Motif</th><th>Probability</th><th>Prediction</th></tr></thead>
+                <tbody>{prob_rows}</tbody>
+            </table>
+        </div>
+    </div>""")
+
+        designed_html = "\n".join(designed_cards)
+
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SugarSwitch Designer Report</title>
+<style>
+:root {{
+    --bg: #f5f7fa;
+    --card: #ffffff;
+    --accent: #4a76a8;
+    --accent-light: #e8f0fe;
+    --text: #2c3e50;
+    --muted: #6c757d;
+    --border: #dee2e6;
+    --shadow: 0 2px 8px rgba(0,0,0,0.08);
+}}
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 20px;
+}}
+.container {{ max-width: 1200px; margin: 0 auto; }}
+header {{
+    background: linear-gradient(135deg, #4a76a8 0%, #6a9fd8 100%);
+    color: #fff;
+    padding: 28px 36px;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}}
+header h1 {{ font-size: 24px; font-weight: 700; }}
+header p {{ opacity: 0.9; margin-top: 4px; font-size: 14px; }}
+.card {{
+    background: var(--card);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+}}
+.card h2 {{
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-light);
+}}
+.info-grid {{
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 8px 16px;
+    font-size: 14px;
+}}
+.info-grid .label {{ font-weight: 600; color: var(--muted); }}
+.info-grid .value {{ word-break: break-all; }}
+
+.seq-viewer {{
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+    font-size: 13px;
+    line-height: 2;
+    white-space: pre;
+    overflow-x: auto;
+    padding: 16px;
+    background: #fafbfc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}}
+.pos-num {{ color: var(--muted); font-size: 11px; user-select: none; }}
+.aa {{
+    display: inline-block;
+    width: 1.1em;
+    text-align: center;
+    border-radius: 3px;
+    cursor: default;
+    transition: transform 0.1s;
+}}
+.aa:hover {{ transform: scale(1.3); z-index: 1; position: relative; }}
+.aa-default {{ background: #f8f9fa; color: #888; }}
+.asn-site {{
+    background: #fff3cd;
+    color: #856404;
+    font-weight: 600;
+    border-bottom: 2px solid #ffc107;
+}}
+.pos-hit {{
+    background: #d4edda;
+    color: #155724;
+    font-weight: 600;
+    border-bottom: 2px solid #28a745;
+}}
+.pos-miss {{
+    background: #f8d7da;
+    color: #721c24;
+    font-weight: 600;
+    border-bottom: 2px solid #dc3545;
+}}
+.gap {{ width: 0.5em; display: inline-block; }}
+
+.legend {{
+    display: flex;
+    gap: 20px;
+    margin-top: 12px;
+    font-size: 13px;
+}}
+.legend-item {{ display: flex; align-items: center; gap: 6px; }}
+.legend-swatch {{
+    display: inline-block;
+    width: 16px; height: 16px;
+    border-radius: 3px;
+}}
+.swatch-asn {{ background: #fff3cd; border: 1px solid #ffc107; }}
+.swatch-pos-hit {{ background: #d4edda; border: 1px solid #28a745; }}
+.swatch-pos-miss {{ background: #f8d7da; border: 1px solid #dc3545; }}
+.swatch-default {{ background: #f8f9fa; border: 1px solid var(--border); }}
+
+.table-wrap {{ overflow-x: auto; }}
+.data-table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    white-space: nowrap;
+}}
+.data-table th {{
+    background: var(--accent);
+    color: #fff;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+}}
+.data-table td {{
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+}}
+.data-table tr:hover {{ background: var(--accent-light); }}
+.data-table tr:nth-child(even) {{ background: #f8f9fa; }}
+.data-table tr:nth-child(even):hover {{ background: var(--accent-light); }}
+footer {{
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 24px;
+    padding: 16px;
+}}
+#seq-tooltip {{
+    position: fixed;
+    pointer-events: none;
+    background: #2c3e50;
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: "SF Mono", Consolas, monospace;
+    white-space: nowrap;
+    z-index: 9999;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    opacity: 0;
+    transition: opacity 0.15s;
+}}
+#seq-tooltip.visible {{ opacity: 1; }}
+</style>
+</head>
+<body>
+<div id="seq-tooltip"></div>
+<div class="container">
+
+<header>
+    <h1>SugarSwitch &mdash; Designer Report</h1>
+    <p>ESM-guided glycosylation sequence design results</p>
+</header>
+
+<!-- Input Info -->
+<div class="card">
+    <h2>Input Information</h2>
+    <div class="info-grid">
+        <div class="label">FASTA File</div>
+        <div class="value">{self.input_fasta_file}</div>
+        <div class="label">WT Sequence Length</div>
+        <div class="value">{len(self.wt_seq)} residues</div>
+        <div class="label">Asn Sites</div>
+        <div class="value">{asn_sites_str}</div>
+        <div class="label">Number of Designs</div>
+        <div class="value">{len(self.designed_seqs)}</div>
+    </div>
+</div>
+
+<!-- WT Sequence -->
+<div class="card">
+    <h2>Wild-Type Sequence</h2>
+    <div class="seq-viewer">
+{wt_seq_html}
+    </div>
+    <div class="legend">
+        <div class="legend-item"><span class="legend-swatch swatch-asn"></span> Asn glycosylation site</div>
+        <div class="legend-item"><span class="legend-swatch swatch-default"></span> Other residues</div>
+    </div>
+</div>
+
+<!-- Designed Sequences -->
+{designed_html}
+
+<footer>
+    Generated by SugarSwitch &bull; Hallucination-designer Pipeline
+</footer>
+
+</div>
+<script>
+(function() {{
+    const tip = document.getElementById('seq-tooltip');
+    document.addEventListener('mouseover', function(e) {{
+        const el = e.target.closest('.aa');
+        if (!el) return;
+        const pos = el.dataset.pos;
+        if (!pos) return;
+        let text = 'Pos ' + pos;
+        if (el.dataset.prob) {{
+            text += ' | prob: ' + el.dataset.prob + ' (' + el.dataset.pct + ')';
+        }} else if (el.dataset.info) {{
+            text += ' | ' + el.dataset.info;
+        }}
+        tip.textContent = text;
+        tip.classList.add('visible');
+    }});
+    document.addEventListener('mousemove', function(e) {{
+        if (tip.classList.contains('visible')) {{
+            tip.style.left = (e.clientX + 12) + 'px';
+            tip.style.top = (e.clientY - 32) + 'px';
+        }}
+    }});
+    document.addEventListener('mouseout', function(e) {{
+        if (e.target.closest('.aa')) {{
+            tip.classList.remove('visible');
+        }}
+    }});
+}})();
+</script>
+</body>
+</html>"""
 
         with open(self.output_html, "w") as f:
             f.write(html)
