@@ -1,6 +1,7 @@
 import random
 import re
 import warnings
+import tempfile
 
 from Bio import SeqIO
 import torch
@@ -11,6 +12,7 @@ import gc
 from config import basic_configs
 from src.design_utils import set_seed, sample_sites, GLY_MOTIFS
 from src.esm_model import EsmModelClassification, ESM_TOKENS
+from src.util import *
 
 eps = -1e9
 
@@ -33,7 +35,8 @@ def prepare_seq(
     )
     modify_seq_id = (ord(modify_chain_id) - ord("A") + 1)
     count_l = count_r = 0
-
+    
+    seqs = {}
     for rec in SeqIO.parse(input_fasta_file, "fasta"):
         seq_num = int(rec.description.split("copies:")[1])
         count_r += seq_num
@@ -47,9 +50,12 @@ def prepare_seq(
                 seq = "".join(seq)
         else:
             seq = str(rec.seq)
+        
+        seqs[rec.description] = seq
+    asn_sites = {modify_chain_id: [m.start() + 1 for m in re.finditer(r"NX", seq)]}
     seq = seq.replace("NX", "NP")
     
-    return seq
+    return seq, asn_sites, seqs
     
 def _load_model(
     base_model_name: str,
@@ -63,7 +69,7 @@ def _load_model(
     model.eval()
     return model
 
-def predict(
+def predict_seq(
     sequence: str,
     base_model_name: str,
     lora_model_name: str,
@@ -259,33 +265,60 @@ def halludesign_esm(
     input_fasta_file: str,
     wt_structure_file: str,
     output_dir: str,
-    n_steps: int = 200,
+    num_designs: int = 1,
+    num_gly_sites: int = 5,
+    n_steps: int = 5,
     learning_rate: float = 1e-2,
     temperature: float = 1.0,
 ):
     warnings.filterwarnings("ignore")
-    wt_seq = prepare_seq(
+    wt_seq, asn_sites, seqs = prepare_seq(
         input_fasta_file=input_fasta_file,
         wt_structure_file=wt_structure_file,
         output_dir=output_dir,
+        num_gly_sites=num_gly_sites,
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    designed_seq = hallucinate(
-        sequence=wt_seq,
-        base_model_name="facebook/esm2_t30_150M_UR50D",
-        lora_model_name="./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint",
-        num_steps=n_steps,
-        lr=learning_rate,
-        temperature=temperature,
-        device=device,
-    )
+    for i in range(num_designs):
+        designed_seq = hallucinate(
+            sequence=wt_seq,
+            base_model_name="facebook/esm2_t30_150M_UR50D",
+            lora_model_name="./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint",
+            num_steps=n_steps,
+            lr=learning_rate,
+            temperature=temperature,
+            device=device,
+        )
+        gc.collect()
+        torch.cuda.empty_cache()
+        torch.cuda.reset_max_memory_allocated()
+        
+        predict_seq(
+            sequence=designed_seq,
+            base_model_name="facebook/esm2_t30_150M_UR50D",
+            lora_model_name="./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint",
+            batch_size=8,
+        )
+        with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as f:
+            for seq_des, seq in seqs.items():
+                if "X" in seq:
+                    f.write(f">{seq_des}\n{designed_seq}\n")
+                else:
+                    f.write(f">{seq_des}\n{seq}\n")    
+            f.flush()
+            glycoprotein_structure_file = update_infer(
+                input_fasta_file=f.name,
+                output_dir=output_dir,
+                suffix=f"_designed_{i+1:0{int(len(str(num_designs)))}d}",
+            )
+        glycanmover = GlycanMover()
+        glycanmover.move(
+            protein_structure_file=glycoprotein_structure_file,
+            glycan_structure_file="./src/G67828VR.pdb",
+            output_pdb=glycoprotein_structure_file,
+            glycan_positions=asn_sites,
+        )
     
-    predict(
-        sequence=designed_seq,
-        base_model_name="facebook/esm2_t30_150M_UR50D",
-        lora_model_name="./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint",
-        batch_size=8,
-    )
     gc.collect()
     torch.cuda.empty_cache()
     torch.cuda.reset_max_memory_allocated()

@@ -21,3 +21,4 @@ Spired/model/SPIRED-Stab.pth
 test.*
 config_backup.py
 ESM-LoRA-Gly
+src/glycodesign_bb_hallucination.py
