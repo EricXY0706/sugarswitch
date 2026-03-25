@@ -1,5 +1,6 @@
 import logging
 import os
+import subprocess
 import re
 import time
 from typing import Set, List, Tuple
@@ -128,6 +129,17 @@ class StructureLoader:
         return np.array(ca_coords)
     
     @staticmethod
+    def get_chainids(structure_file: str):
+        
+        structure, filename = StructureLoader.load_structure(structure_file)
+        chain_ids = set()
+        for model in structure:
+            for chain in model:
+                chain_ids.add(chain.id)
+        
+        return chain_ids
+    
+    @staticmethod
     def get_mean_bfactor(structure_file, chain_ids_list):
         
         # Load structure
@@ -233,6 +245,7 @@ class MsaFileGenerator:
         self.password = "example_password"
         self.user_agent = "colabfold/1.5.5"
         self.host_url = "https://api.colabfold.com"
+        # self.host_url = "https://protenix-server.com/api/msa"
         self.email = ""
         self.tqdm_bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [elapsed: {elapsed} estimate remaining: {remaining}]"
         self.seq_id_pairs = {rec.id: (str(rec.seq), int(rec.description.split(" ")[-1].split(":")[-1])) for rec in SeqIO.parse(input_fasta_file, "fasta")}
@@ -509,6 +522,53 @@ class MsaFileEditor:
                     assert len(new_aligned_seq) == len(new_seq), f"Error in {desc} alignment"
                     MsaFileEditor.write_msa_record(desc, new_aligned_seq, f)
 
+def update_infer(
+        input_fasta_file: str,
+        output_dir: str,
+        suffix: str = "",
+) -> str:
+    """
+    Update the infer result dir with the input fasta file.
+    """
+    if not os.path.exists(input_fasta_file):
+        raise FileNotFoundError(f"Input fasta file `{input_fasta_file}` not found.")
+    filename = f"{basic_configs['name']}{suffix}"
+    msa = MsaFileGenerator(input_fasta_file=input_fasta_file)
+    with open(input_fasta_file, "r") as f:
+        query = f.read()
+    msa.run_mmseqs2(x=query, prefix=f"{output_dir}/msa{suffix}")
+    
+    # Boltz prediction
+    seqs = {rec.id: (str(rec.seq), int(rec.description.split(" ")[-1].split(":")[-1])) for rec in SeqIO.parse(input_fasta_file, "fasta")}
+    chain_ptr = 0
+    out = []
+    for name, (seq, num) in seqs.items():
+        ids = FlowList(CHAIN_IDS[chain_ptr : chain_ptr + num])
+        out.append({
+            "protein": {
+                "id": ids,
+                "sequence": seq,
+                "msa": f"{output_dir}/msa{suffix}/uniref_{len(out)+1}.a3m",
+            }
+        })
+        chain_ptr += num
+
+    with open(f"{output_dir}/{filename}.yaml", "w") as f:
+        yaml.safe_dump({"version": 1, "sequences": out}, f, sort_keys=False, indent=2)
+    
+    cmd = [
+        "boltz", "predict", f"{output_dir}/{filename}.yaml",
+        "--cache", f"./boltz_ckpt",
+        "--output_format", "pdb",
+        "--out_dir", output_dir,
+    ]
+    subprocess.run(cmd, check=True)
+    subprocess.run(f"mv {output_dir}/boltz_results_{filename}/predictions/{filename}/{filename}_model_0.pdb {output_dir}/{filename}.pdb", shell=True)
+    subprocess.run(f"rm -r {output_dir}/boltz_results_{filename}", shell=True)
+    subprocess.run(f"rm -f {output_dir}/{filename}.yaml", shell=True)
+    
+    return f"{output_dir}/{filename}.pdb"
+    
 class GlycanMover:
 
     def __init__(self,
@@ -516,9 +576,9 @@ class GlycanMover:
         angle_C1: float = 120.0,
         angle_C2: float = 109.5,
         angle_O5: float = 109.5,
-        dihedral_C1: float = -120.0,
-        dihedral_C2: float = 120.0,
-        dihedral_O5: float = -120.0
+        dihedral_C1: float = 178.5,
+        dihedral_C2: float = 90.0,
+        dihedral_O5: float = -95.0
         ) -> None:
         """
         Initialize default bond geometry values for glycan placement.
@@ -852,7 +912,7 @@ class GlycanMover:
 
                     self._merge_structures(prot, glyc, glycan_chain, output_pdb, glycan_idx)
                     glycan_idx += 1
-
+    
 class InteractionCheck:
     def __init__(self) -> None:
         """
