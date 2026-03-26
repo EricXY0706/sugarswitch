@@ -1,4 +1,5 @@
 import random
+import time
 import re
 import warnings
 import tempfile
@@ -78,7 +79,7 @@ def predict_seq(
     lora_model_name: str,
     batch_size: int = 8,
 ):
-    set_seed(42)
+    set_seed(seed=int(time.time()))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = _load_model(base_model_name, lora_model_name, device)
     tokenizer = EsmTokenizer.from_pretrained(base_model_name)
@@ -129,7 +130,7 @@ def hallucinate(
 
     Returns the designed sequence (string of same length as input).
     """
-    set_seed(42)
+    set_seed(seed=int(time.time()))
     sequence = sequence.strip()
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
