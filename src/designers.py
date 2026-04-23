@@ -4,6 +4,7 @@ import re
 import warnings
 import tempfile
 from pathlib import Path
+import shutil
 
 from Bio import SeqIO
 import torch
@@ -42,6 +43,7 @@ def prepare_seq(
     
     seqs = {}
     wt_seq = ""
+    seq_to_design = ""
     for rec in SeqIO.parse(input_fasta_file, "fasta"):
         seq_num = int(rec.description.split("copies:")[1])
         count_r += seq_num
@@ -51,17 +53,24 @@ def prepare_seq(
             seq = str(rec.seq)
             wt_seq += seq
             for s in sampled_sites:
-                seq = [seq[:s-1-2], seq[s-1-2:s-1+3], seq[s-1+3:]]
-                seq[1] = random.sample(GLY_MOTIFS, 1)[0]
+                if s <= 5:
+                    seq = [seq[:5], seq[5:]]
+                    seq[0] = random.sample(GLY_MOTIFS, 1)[0]
+                else:
+                    seq = [seq[:s-1-2], seq[s-1-2:s-1+3], seq[s-1+3:]]
+                    seq[1] = random.sample(GLY_MOTIFS, 1)[0]
                 seq = "".join(seq)
+            seq_to_design = seq
         else:
             seq = str(rec.seq)
         
         seqs[rec.description] = seq
-    asn_sites = {chain_id: [m.start() + 1 for m in re.finditer(r"NX", seq)]}
+        count_l += seq_num
+    asn_sites = {chain_id: [m.start() + 1 for m in re.finditer(r"NX", seq_to_design)]}
     # seq = seq.replace("NX", "NP")
+    # print(seq_to_design, asn_sites, seqs, wt_seq)
     
-    return seq, asn_sites, seqs, wt_seq
+    return seq_to_design, asn_sites, seqs, wt_seq
     
 def _load_model(
     base_model_name: str,
@@ -121,6 +130,7 @@ def hallucinate(
     num_steps: int = 200,
     lr: float = 1e-2,
     temperature: float = 1.0,
+    add_pll_loss: bool = True,
     pll_weight: float = 0.1,
     device: torch.device = None,
 ) -> str:
@@ -222,33 +232,36 @@ def hallucinate(
         probs = torch.softmax(logits, dim=-1)
 
         gly_loss = -torch.log(probs[:, 1] + 1e-8).mean()
+        
+        if add_pll_loss:
+            if len(opt_positions) > 0 and pll_weight > 0.0:
+                P = len(opt_positions)
+                inputs_embeds_batch = inputs_embeds.repeat(P, 1, 1)
 
-        if len(opt_positions) > 0 and pll_weight > 0.0:
-            P = len(opt_positions)
-            inputs_embeds_batch = inputs_embeds.repeat(P, 1, 1)
+                masked_indices = torch.tensor([pos + 1 for pos in opt_positions], device=device, dtype=torch.long)
 
-            masked_indices = torch.tensor([pos + 1 for pos in opt_positions], device=device, dtype=torch.long)
+                for b in range(P):
+                    inputs_embeds_batch[b, masked_indices[b], :] = mask_embed.to(inputs_embeds_batch.dtype)
 
-            for b in range(P):
-                inputs_embeds_batch[b, masked_indices[b], :] = mask_embed.to(inputs_embeds_batch.dtype)
+                attention_mask_batch = attention_mask.repeat(P, 1)
 
-            attention_mask_batch = attention_mask.repeat(P, 1)
+                lm_outputs = masked_lm(inputs_embeds=inputs_embeds_batch, attention_mask=attention_mask_batch)
+                lm_logits = lm_outputs.logits  # [P, L+2, vocab_size]
 
-            lm_outputs = masked_lm(inputs_embeds=inputs_embeds_batch, attention_mask=attention_mask_batch)
-            lm_logits = lm_outputs.logits  # [P, L+2, vocab_size]
+                batch_idx = torch.arange(P, device=device)
+                logits_at_mask = lm_logits[batch_idx, masked_indices, :]
 
-            batch_idx = torch.arange(P, device=device)
-            logits_at_mask = lm_logits[batch_idx, masked_indices, :]
+                logits_at_mask_reordered = logits_at_mask[:, aa_token_ids]
+                lm_log_probs = torch.log_softmax(logits_at_mask_reordered, dim=-1)
 
-            logits_at_mask_reordered = logits_at_mask[:, aa_token_ids]
-            lm_log_probs = torch.log_softmax(logits_at_mask_reordered, dim=-1)
+                seq_probs_opt = seq_probs[opt_positions, :]
 
-            seq_probs_opt = seq_probs[opt_positions, :]
+                pll_per_pos = - (seq_probs_opt * lm_log_probs).sum(dim=-1)
+                pll_loss = pll_per_pos.mean()
 
-            pll_per_pos = - (seq_probs_opt * lm_log_probs).sum(dim=-1)
-            pll_loss = pll_per_pos.mean()
-
-            loss = gly_loss + pll_weight * pll_loss
+                loss = gly_loss + pll_weight * pll_loss
+        else:
+            loss = gly_loss
 
         loss.backward()
         optimizer.step()
@@ -281,6 +294,8 @@ def halludesign_esm(
     n_steps: int = 100,
     learning_rate: float = 1e-2,
     temperature: float = 1.0,
+    add_pll_loss: bool = True,
+    pll_weight: float = 0.1,
 ):
     warnings.filterwarnings("ignore")
     filename = name if name else Path(input_fasta_file).name.split(".")[0]
@@ -304,6 +319,8 @@ def halludesign_esm(
             num_steps=n_steps,
             lr=learning_rate,
             temperature=temperature,
+            add_pll_loss=add_pll_loss,
+            pll_weight=pll_weight,
             device=device,
         )
         gc.collect()
@@ -325,11 +342,14 @@ def halludesign_esm(
                 else:
                     f.write(f">{seq_des}\n{seq}\n")    
             f.flush()
+            suffix = f"_designed_{i+1:0{int(len(str(num_designs)))}d}"
             glycoprotein_structure_file = update_infer(
                 input_fasta_file=f.name,
                 output_dir=output_dir,
-                suffix=f"_designed_{i+1:0{int(len(str(num_designs)))}d}",
+                filename=filename,
+                suffix=suffix,
             )
+            shutil.rmtree(f"{output_dir}/msa{suffix}")
         glycanmover = GlycanMover()
         glycanmover.move(
             protein_structure_file=glycoprotein_structure_file,

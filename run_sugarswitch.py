@@ -35,8 +35,9 @@ def prefilter(input, out_dir, name, chain_id, functional_hotspots, gpu_id):
 @click.option("--num_designs", default=1, type=int, help="number of designs to generate", required=True)
 @click.option("--num_gly_sites", default=5, type=int, help="number of glycosylation sites to design", required=True)
 @click.option("--num_steps", default=100, type=int, help="number of hallucination steps", required=False)
+@click.option("--add_pll_loss", default=True, type=bool, help="whether add pseudo log likelihood loss", required=False)
 @click.option("--gpu_id", default=0, type=int, help="GPU ID to run the pipeline", required=False)
-def designer(input, out_dir, name, chain_id, num_designs, num_gly_sites, num_steps, gpu_id):
+def designer(input, out_dir, name, chain_id, num_designs, num_gly_sites, num_steps, add_pll_loss, gpu_id):
     
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     from src.designers import halludesign_esm
@@ -48,6 +49,7 @@ def designer(input, out_dir, name, chain_id, num_designs, num_gly_sites, num_ste
         num_designs=num_designs,
         num_gly_sites=num_gly_sites,
         n_steps=num_steps,
+        add_pll_loss=add_pll_loss
     )
 
 @click.command()
@@ -66,8 +68,9 @@ def ssbuilder(input, out_dir):
 @click.option("--num_designs", default=1, type=int, help="number of designs to generate", required=False)
 @click.option("--num_gly_sites", default=5, type=int, help="number of glycosylation sites to design", required=False)
 @click.option("--num_steps", default=100, type=int, help="number of hallucination steps", required=False)
+@click.option("--add_pll_loss", default=True, type=bool, help="whether add pseudo log likelihood loss", required=False)
 @click.option("--gpu_id", default=0, type=int, help="GPU ID to run the pipeline", required=False)
-def pipeline(input, out_dir, name, chain_id, functional_hotspots, num_designs, num_gly_sites, num_steps, gpu_id):
+def pipeline(input, out_dir, name, chain_id, functional_hotspots, num_designs, num_gly_sites, num_steps, add_pll_loss, gpu_id):
     
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     from src.prefilters import run_prefilters
@@ -88,6 +91,7 @@ def pipeline(input, out_dir, name, chain_id, functional_hotspots, num_designs, n
         num_designs=num_designs,
         num_gly_sites=num_gly_sites,
         n_steps=num_steps,
+        add_pll_loss=add_pll_loss,
     )
     
 sugarswitch.add_command(prefilter)
