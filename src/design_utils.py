@@ -54,7 +54,7 @@ def sample_sites(
     sites_combs = find_cliques(contact_map, editable_sites, num_sites_per_comb)
 
     df = pd.read_csv(scoring_df)
-    sites_scores = {sites: round(np.sum(np.array([df.loc[df["Site"] == s]["SASA"].values[0] for s in sites])), 4) for sites in sites_combs}
+    sites_scores = {sites: round(np.sum(np.array([df.loc[df["Site"] == s]["SASA_i"].values[0] for s in sites])), 4) for sites in sites_combs}
     sites_scores = sorted(sites_scores.items(), key=lambda x: x[1], reverse=True)
     sampled_sites = sites_scores[0][0]
     

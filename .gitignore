@@ -19,6 +19,7 @@ Spired/model/SPIRED-Fitness.pth
 Spired/model/SPIRED-Stab.pth
 *.out
 test.*
+run.sh
 config_backup.py
 ESM-LoRA-Gly
 src/glycodesign_bb_hallucination.py

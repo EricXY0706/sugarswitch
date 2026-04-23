@@ -26,16 +26,18 @@ def prepare_seq(
     input_fasta_file: str,
     wt_structure_file: str,
     output_dir: str,
+    name: str = None,
+    chain_id: str = "A",
     num_gly_sites: int = 5,
 ):
-    modify_chain_id = basic_configs["protein_chain_id"]
+    filename = name if name else Path(input_fasta_file).name.split(".")[0]
     sampled_sites = sample_sites(
         structure_file=wt_structure_file,
-        scoring_df=f"{output_dir}/{basic_configs['name']}_single_points.csv",
-        chain_id=modify_chain_id,
+        scoring_df=f"{output_dir}/{filename}_single_points.csv",
+        chain_id=chain_id,
         num_sites_per_comb=num_gly_sites,
     )
-    modify_seq_id = (ord(modify_chain_id) - ord("A") + 1)
+    modify_seq_id = (ord(chain_id) - ord("A") + 1)
     count_l = count_r = 0
     
     seqs = {}
@@ -56,7 +58,7 @@ def prepare_seq(
             seq = str(rec.seq)
         
         seqs[rec.description] = seq
-    asn_sites = {modify_chain_id: [m.start() + 1 for m in re.finditer(r"NX", seq)]}
+    asn_sites = {chain_id: [m.start() + 1 for m in re.finditer(r"NX", seq)]}
     # seq = seq.replace("NX", "NP")
     
     return seq, asn_sites, seqs, wt_seq
@@ -271,8 +273,9 @@ def hallucinate(
 
 def halludesign_esm(
     input_fasta_file: str,
-    wt_structure_file: str,
     output_dir: str,
+    name: str,
+    chain_id: str = "A",
     num_designs: int = 1,
     num_gly_sites: int = 5,
     n_steps: int = 100,
@@ -280,11 +283,14 @@ def halludesign_esm(
     temperature: float = 1.0,
 ):
     warnings.filterwarnings("ignore")
-    filename = Path(input_fasta_file).name.split(".")[0]
+    filename = name if name else Path(input_fasta_file).name.split(".")[0]
+    wt_structure_file = f"{output_dir}/{filename}.pdb"
     wt_seq, asn_sites, seqs, original_seq = prepare_seq(
         input_fasta_file=input_fasta_file,
         wt_structure_file=wt_structure_file,
         output_dir=output_dir,
+        name=filename,
+        chain_id=chain_id,
         num_gly_sites=num_gly_sites,
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
