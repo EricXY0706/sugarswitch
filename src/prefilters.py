@@ -19,14 +19,18 @@ SCRIPT_PATH = os.path.dirname(os.path.abspath(__file__))
 def run_prefilters(
     input_fasta_file: str,
     output_dir: str,
+    name: str = None,
+    suffix: str = "",
+    protein_chain_id: str = "A",
+    functional_hotspots: list = [],
 ) -> None:
     """
     Run prefilters on the input fasta file.
     """
     warnings.filterwarnings("ignore")
-    structure_file = update_infer(input_fasta_file=input_fasta_file, output_dir=output_dir)
-    chain = basic_configs["protein_chain_id"]
-    query_sequence = FastaLoader.get_sequence(sequence_file=input_fasta_file, chain_id=chain)
+    filename = name if name else Path(input_fasta_file).name.split(".")[0]
+    structure_file = update_infer(input_fasta_file=input_fasta_file, output_dir=output_dir, filename=filename, suffix=suffix)
+    query_sequence = FastaLoader.get_sequence(sequence_file=input_fasta_file, chain_id=protein_chain_id)
     chains_nums = [int(rec.description.split(" ")[-1].split(":")[-1]) for rec in SeqIO.parse(input_fasta_file, "fasta")]
     chains_nums.append(len(CHAIN_IDS) - sum(chains_nums))
     seq_chain_ids = []
@@ -36,22 +40,21 @@ def run_prefilters(
         seq_chain_id = "".join(CHAIN_IDS[pos: pos + l])
         seq_chain_ids.append(seq_chain_id)
         pos += l
-        if chain in seq_chain_id:
+        if protein_chain_id in seq_chain_id:
             aln_file_id = i + 1
 
-    filename = Path(input_fasta_file).name.split(".")[0]
-    ss = StructureLoader.get_secondary_structure(structure_file=structure_file, chain_id=chain)
+    ss = StructureLoader.get_secondary_structure(structure_file=structure_file, chain_id=protein_chain_id)
 
     # Filtering out interacting sites with the given hotspots
     interaction_checker = InteractionCheck()
     interchain_interacting_sites = interaction_checker.get_inter_interaction_aa(
         structure_file=structure_file,
-        chain_id=chain,
+        chain_id=protein_chain_id,
     )
     hotspots_interacting_sites = interaction_checker.get_intra_interaction_aa(
         structure_file=structure_file,
-        chain_id=chain,
-        positions=basic_configs["functional_hotspots"],
+        chain_id=protein_chain_id,
+        positions=functional_hotspots,
         dist_threshold=basic_configs["Cb_interaction_threshold"],
         is_self_included=True,
         num_neighbors=basic_configs["num_neighbors_to_shield"],
@@ -60,8 +63,8 @@ def run_prefilters(
     # Filtering out the strong-coupling and conserved sites
     skip_evc = False
     input_alignment_file = f"{output_dir}/msa/uniref_{aln_file_id}.a3m"
-    if len(list(SeqIO.parse(input_alignment_file, "fasta"))) != 1:
-        evc = EVC_funcs(alignment_file=input_alignment_file, structure_file=structure_file, chain_id=chain, out_dir=f"{output_dir}/evc/")
+    if len(list(SeqIO.parse(input_alignment_file, "fasta"))) >= 10:
+        evc = EVC_funcs(alignment_file=input_alignment_file, structure_file=structure_file, chain_id=protein_chain_id, out_dir=f"{output_dir}/evc/")
         evc.run_evc(
             focus_sequence=filename,
             min_sequence_distance=basic_configs["evc_min_sequence_distance"],
@@ -85,7 +88,7 @@ def run_prefilters(
     sasa_cutoff, low_sasa_sites, sasa_index_dict = rosetta.get_SASA(
         structure_file=structure_file,
         cutoff=basic_configs["sasa_cutoff"],
-        chain=chain,
+        chain=protein_chain_id,
     )
 
     non_editable_regions = interchain_interacting_sites | hotspots_interacting_sites | conserverd_coupling_sites | low_sasa_sites
@@ -115,20 +118,20 @@ def run_prefilters(
         mut_score_s = saprot.mutation_score(
             query_seq=query_sequence,
             structure_file=structure_file,
-            chain_id=chain,
+            chain_id=protein_chain_id,
             mutations={s: "N"},
         )
         if s != len(query_sequence) and s != (len(query_sequence) - 1):
             mut_score_s_next2_S = saprot.mutation_score(
                 query_seq=query_sequence,
                 structure_file=structure_file,
-                chain_id=chain,
+                chain_id=protein_chain_id,
                 mutations={s: "N", s+2: "S"},
             )
             mut_score_s_next2_T = saprot.mutation_score(
                 query_seq=query_sequence,
                 structure_file=structure_file,
-                chain_id=chain,
+                chain_id=protein_chain_id,
                 mutations={s: "N", s+2: "T"},
             )
         else:
@@ -153,10 +156,10 @@ def run_prefilters(
         rosetta.mutate(
             structure_file=structure_file,
             output_file=glycoprotein_structure_file,
-            mutations={f"{chain}{s}": "N"},
+            mutations={f"{protein_chain_id}{s}": "N"},
         )
-        ss_dict = StructureLoader.get_secondary_structure(structure_file=glycoprotein_structure_file, chain_id=chain)
-        ss_site = SS_TAG[ss_dict[(chain, s)]][-1]
+        ss_dict = StructureLoader.get_secondary_structure(structure_file=glycoprotein_structure_file, chain_id=protein_chain_id)
+        ss_site = SS_TAG[ss_dict[(protein_chain_id, s)]][-1]
         
         glycanmover = GlycanMover(
             bond_length=basic_configs["bond_length_C1_ND2"],
@@ -171,16 +174,16 @@ def run_prefilters(
             protein_structure_file=glycoprotein_structure_file,
             glycan_structure_file="./src/G51766DQ.pdb",
             output_pdb=glycoprotein_structure_file,
-            glycan_positions={chain: [s]},
+            glycan_positions={protein_chain_id: [s]},
         )
         clash_checker = ClashCheck()
         clash_residues = clash_checker.has_clash(
-            chain_id=chain,
+            chain_id=protein_chain_id,
             secondary_structure=ss_dict,
             structure_file=glycoprotein_structure_file,
         )
 
-        results.append([s, SS_TAG[ss_dict[(chain, s)]][0], f"{list(query_sequence)[s-1]}{s}N", conservation_score, coupling_score, 
+        results.append([s, SS_TAG[ss_dict[(protein_chain_id, s)]][0], f"{list(query_sequence)[s-1]}{s}N", conservation_score, coupling_score, 
                         sasa_value, sasa_value_next1, sasa_value_next2, sasa_around_mean, sasa_next_mean, 
                         ddG_s, dTm_s, ddG_next2_S, dTm_next2_S, ddG_next2_T, dTm_next2_T, 
                         mut_score_s, mut_score_s_next2_S, mut_score_s_next2_T, clash_residues])
@@ -198,7 +201,7 @@ def run_prefilters(
     StructureFileEditor.write_score_as_bfactor(
         pose=pose,
         structure_file=f"{output_dir}/{filename}.pdb",
-        chain_id=chain,
+        chain_id=protein_chain_id,
         df_file=df_file,
     )
     reporter = prefilter_report(
@@ -208,6 +211,7 @@ def run_prefilters(
         df_file=df_file,
         output_html=f"{output_dir}/{filename}_prefilter_report.html",
     )
+    shutil.rmtree(f"{output_dir}/msa{suffix}")
     # reporter.plot_heatmap(
     #     out_file=f"{output_dir}/{filename}_single_points_heatmap.pdf",
     # )

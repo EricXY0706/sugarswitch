@@ -6,6 +6,7 @@ import re
 import time
 from typing import Set, List, Tuple
 from tqdm import tqdm
+from pathlib import Path
 import tarfile
 import yaml
 
@@ -21,8 +22,6 @@ import seaborn as sns
 from sklearn.preprocessing import MinMaxScaler
 import requests
 from requests.auth import HTTPBasicAuth
-
-from config import basic_configs
 
 SS_TAG = {
     "-": ["loop", "loop"], 
@@ -428,7 +427,7 @@ class MsaFileGenerator:
                 with tarfile.open(tar_gz_file, "r:gz") as tar:
                     tar.extractall(os.path.dirname(tar_gz_file))
                 lines = open(f"{prefix}/uniref.a3m", "r").readlines()[:-1]
-                pats = [re.compile(rf".*{k}") for k, _ in self.seq_id_pairs.items()]
+                pats = [re.compile(rf".*{k}$") for k, _ in self.seq_id_pairs.items()]
                 idx = [[i for i, line in enumerate(lines) if pats[j].match(line.strip())] for j in range(len(pats))]
                 idx.append([len(lines)])
                 for i, _ in enumerate(range(len(idx) - 1)):
@@ -524,14 +523,16 @@ class MsaFileEditor:
 def update_infer(
         input_fasta_file: str,
         output_dir: str,
+        filename: str = None,
         suffix: str = "",
 ) -> str:
     """
     Update the infer result dir with the input fasta file.
     """
+    os.makedirs(output_dir, exist_ok=True)
     if not os.path.exists(input_fasta_file):
         raise FileNotFoundError(f"Input fasta file `{input_fasta_file}` not found.")
-    filename = f"{basic_configs['name']}{suffix}"
+    filename = f"{filename}{suffix}"
     msa = MsaFileGenerator(input_fasta_file=input_fasta_file)
     with open(input_fasta_file, "r") as f:
         query = f.read()
@@ -565,7 +566,6 @@ def update_infer(
     subprocess.run(f"mv {output_dir}/boltz_results_{filename}/predictions/{filename}/{filename}_model_0.pdb {output_dir}/{filename}.pdb", shell=True)
     subprocess.run(f"rm -r {output_dir}/boltz_results_{filename}", shell=True)
     subprocess.run(f"rm -f {output_dir}/{filename}.yaml", shell=True)
-    shutil.rmtree(f"{output_dir}/msa{suffix}")
     
     return f"{output_dir}/{filename}.pdb"
     

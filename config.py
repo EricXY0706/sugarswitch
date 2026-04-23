@@ -1,9 +1,3 @@
-user_configs = {
-    "name": "protein_name",
-    "protein_chain_id": "A",
-    "functional_hotspots": [1,2,3,"4-10"],
-}
-
 pipeline_configs = {
     "Cb_interaction_threshold": 6.0,
     "num_neighbors_to_shield": 3,
@@ -25,7 +19,7 @@ pipeline_configs = {
     "dihedral_O5_C1_ND2_CG": {"loop": -95.0, "helix": -95.0, "sheet": -95.0},
 }
 
-basic_configs = {**user_configs, **pipeline_configs}
+basic_configs = {**pipeline_configs}
 ranker_configs = {
     "conservation_weight": 1.0,
     "coupling_weight": 0.5,
