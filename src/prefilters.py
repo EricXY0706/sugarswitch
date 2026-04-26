@@ -197,7 +197,7 @@ def run_prefilters(
     df = ranker.compute_score(df)
     df_file = f"{output_dir}/{filename}_single_points.csv"
     df.to_csv(df_file, index=False)
-    pose = Rosetta_funcs.get_pose(f"{output_dir}/{filename}.pdb")
+    pose = rosetta.get_pose(f"{output_dir}/{filename}.pdb")
     StructureFileEditor.write_score_as_bfactor(
         pose=pose,
         structure_file=f"{output_dir}/{filename}.pdb",

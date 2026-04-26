@@ -229,7 +229,7 @@ class StructureFileEditor:
         for i, cs in enumerate(chain_seq_dict.items()):
             chain, seq = cs
             data = [(i+1, s+1, df.loc[df["Site"] == s+1, "Borda_score"].values[0] * 100 if chain == chain_id and (s+1) in sites else 0.) for s in range(len(seq))]
-        data_pose.extend(data)
+            data_pose.extend(data)
         StructureFileEditor.write_bfactor(pose, data_pose, structure_file)
 
 class MsaFileGenerator:
