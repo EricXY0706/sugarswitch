@@ -430,6 +430,8 @@ class MsaFileGenerator:
                 pats = [re.compile(rf".*{k}$") for k, _ in self.seq_id_pairs.items()]
                 idx = [[i for i, line in enumerate(lines) if pats[j].match(line.strip())] for j in range(len(pats))]
                 idx.append([len(lines)])
+                idx.insert(0, [0])
+                idx = [i for i in idx if i != []]
                 for i, _ in enumerate(range(len(idx) - 1)):
                     start_idx = idx[i][0]
                     end_idx = idx[i + 1][0]
