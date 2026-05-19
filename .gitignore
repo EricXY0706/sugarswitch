@@ -18,7 +18,7 @@ SaProt/foldseek/foldseek
 Spired/model/SPIRED-Fitness.pth
 Spired/model/SPIRED-Stab.pth
 *.out
-test.*
+test*
 run.sh
 config_backup.py
 ESM-LoRA-Gly
