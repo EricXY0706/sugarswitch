@@ -20,6 +20,7 @@ Spired/model/SPIRED-Stab.pth
 *.out
 test*
 run.sh
+run_nano.sh
 config_backup.py
 ESM-LoRA-Gly
 src/glycodesign_bb_hallucination.py
