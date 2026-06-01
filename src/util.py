@@ -524,6 +524,7 @@ class MsaFileEditor:
 
 def update_infer(
         input_fasta_file: str,
+        input_structure_file: str,
         output_dir: str,
         filename: str = None,
         suffix: str = "",
@@ -541,6 +542,9 @@ def update_infer(
     msa.run_mmseqs2(x=query, prefix=f"{output_dir}/msa{suffix}")
     
     # Boltz prediction
+    if input_structure_file is not None:
+        return input_structure_file
+    
     seqs = {rec.id: (str(rec.seq), int(rec.description.split(" ")[-1].split(":")[-1])) for rec in SeqIO.parse(input_fasta_file, "fasta")}
     chain_ptr = 0
     out = []
