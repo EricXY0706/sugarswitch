@@ -17,6 +17,7 @@ SaProt/weights/PLMs/vocab.txt
 SaProt/foldseek/foldseek
 Spired/model/SPIRED-Fitness.pth
 Spired/model/SPIRED-Stab.pth
+GVP_Bind
 *.out
 test*
 run.sh
