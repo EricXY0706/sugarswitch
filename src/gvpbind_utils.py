@@ -3,10 +3,6 @@ GVP-Bind: per-residue protein binding-site (interface) prediction.
 Credit to: https://github.com/LAJ-THU/GVP-Bind
 """
 from __future__ import annotations
-# import sys
-# from pathlib import Path
-# # 把 sugarswitch/ 加入 sys.path，使 GVP_Bind 可被导入
-# sys.path.insert(0, str(Path(__file__).parent.parent))
 import torch
 
 from GVP_Bind.src.gvpbind.data.dataset import build_knn_graph
