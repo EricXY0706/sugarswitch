@@ -1,64 +1,115 @@
-"""
-GVP-Bind: per-residue protein binding-site (interface) prediction.
-Credit to: https://github.com/LAJ-THU/GVP-Bind
+"""Binary-head predictor for SaProt + atom-graph checkpoints, on novel PDBs.
+
+Same role and output as ``predict_binary`` (a per-residue ``Binding site
+probability`` CSV that proseek reads), but it additionally computes the two
+cached-at-training features INLINE so a SaProt/atomgraph checkpoint can run with
+no precomputed cache:
+
+  * SaProt 1280-d PLM embedding  (foldseek 3Di -> SaProt_650M_AF2)
+  * heavy-atom graph             (gemmi)
+
+Which features are computed is auto-detected from the checkpoint's
+``model_cfg`` hparams (``esm_dim``, ``atomgraph``) — no flags needed; a plain
+(no-PLM, no-atomgraph) checkpoint runs exactly like ``predict_binary``.
+
+Inference regime: these checkpoints are trained with ``drop_partner_chain=ON``
+(the atom-graph ``resid`` requires it), i.e. an **apo / query-chain-only**
+predictor. We therefore parse the complex, then slice to the query chain (remap
+it to chain 0) and build all features over the query residues only.
+
+Usage:
+    gvpbind-predict <pdb>_<chain> \
+        [--checkpoint CKPT]  (default: bundled GVP+SaProt+atom-graph model) \
+        --name RUN --predictions_folder OUT [--temperature T | --rank-normalize] \
+        [--saprot-model-dir DIR] [--foldseek-bin PATH]
 """
 from __future__ import annotations
+
+import csv
+from pathlib import Path
+
+import numpy as np
 import torch
 
 from GVP_Bind.src.gvpbind.data.dataset import build_knn_graph
-from GVP_Bind.src.gvpbind.data.parse import parse_pdb_complex, parse_single_chain
+from GVP_Bind.src.gvpbind.data.dockground import parse_pdb_complex
+from GVP_Bind.src.gvpbind.infer.atomgraph_infer import compute_atomgraph
+from GVP_Bind.src.gvpbind.infer.saprot_embed import compute_saprot_embedding
 from GVP_Bind.src.gvpbind.task.multitask import MultiTask
+
+_ONE_LETTER = "ARNDCQEGHILKMFPSTWYV"
+DEFAULT_CHECKPOINT = "./GVP_Bind/checkpoints/gvpbind_saprot_atg_dcl.ckpt"
+
+def _model_cfg(module) -> dict:
+    hp = getattr(module, "hparams", {}) or {}
+    cfg = hp.get("model_cfg", hp)
+    return dict(cfg) if cfg is not None else {}
 
 def gvpbind_predict(
     structure_file: str,
     chain_id: str,
-    mode: str = "Complex",
+    out_dir: str,
 ):
-    
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    if mode == "Complex":
-        parsed = parse_pdb_complex(structure_file, query_chain=chain_id)
-        batch = {
-            "coords": torch.from_numpy(parsed["coords"]).to(device),
-            "res_types": torch.from_numpy(parsed["res_types"]).long().to(device),
-            "chain_ids": torch.from_numpy(parsed["chain_ids"]).long().to(device),
-            "is_query": torch.from_numpy(parsed["is_query"]).to(device),
-            "edge_index": build_knn_graph(torch.from_numpy(parsed["coords"]).to(device)[:, 1]).to(device),
-            "seq_idx": torch.from_numpy(parsed["seq_idx"]).long().to(device),
-    }
-        pdb_resnum = parsed["pdb_resnum"]
-    elif mode == "Monomer":
-        coords_np, rt_np, si_np, pdb_resnum = parse_single_chain(structure_file, chain_id)
-        batch = {
-            "coords": torch.from_numpy(coords_np).to(device),
-            "res_types": torch.from_numpy(rt_np).long().to(device),
-            "chain_ids": torch.zeros(len(torch.from_numpy(rt_np).long()), dtype=torch.long, device=device),
-            "is_query": torch.ones(len(torch.from_numpy(rt_np).long()), dtype=torch.bool, device=device),
-            "edge_index": build_knn_graph(torch.from_numpy(coords_np)[:, 1]).to(device),
-            "seq_idx": torch.from_numpy(si_np).long().to(device),
-    }
-    
-    model_type = {"Complex": "ba", "Monomer": "au"}
-    module = MultiTask.load_from_checkpoint(f"./GVP_Bind/checkpoints/gvpbind_au.ckpt", map_location=device, strict=False)
+    parsed = parse_pdb_complex(structure_file, query_chain=chain_id)
+
+    # --- slice to the query chain (apo / drop_partner regime) -----------------
+    q = np.asarray(parsed["is_query"], dtype=bool)
+    coords = torch.from_numpy(parsed["coords"][q])
+    res_types = torch.from_numpy(parsed["res_types"][q].astype("int64"))
+    seq_idx = torch.from_numpy(parsed["seq_idx"][q].astype("int64"))
+    q_resnum = parsed["pdb_resnum"][q]
+    nq = int(q.sum())
+    chain_ids = torch.zeros(nq, dtype=torch.long)        # query remapped to chain 0
+    is_query = torch.ones(nq, dtype=torch.float32)
+    edge_index = build_knn_graph(coords[:, 1])
+    aa_seq = "".join(_ONE_LETTER[i] if i < 20 else "X" for i in res_types.tolist())
+
+    module = MultiTask.load_from_checkpoint(DEFAULT_CHECKPOINT, map_location=device, strict=False)
     module.eval().to(device)
-    
+    cfg = _model_cfg(module)
+    need_saprot = int(cfg.get("esm_dim", 0)) > 0
+    need_atom = bool(cfg.get("atomgraph", False))
+
+    batch = {
+        "coords": coords.to(device),
+        "res_types": res_types.to(device),
+        "chain_ids": chain_ids.to(device),
+        "is_query": is_query.to(device),
+        "edge_index": edge_index.to(device),
+        "seq_idx": seq_idx.to(device),
+    }
+
+    if need_saprot:
+        esm = compute_saprot_embedding(
+            structure_file, chain_id, expected_aa_seq=aa_seq,
+            device=device)
+        if esm.shape[0] != nq:
+            raise SystemExit(f"SaProt L={esm.shape[0]} != query residues {nq}")
+        batch["esm_features"] = esm.to(device)
+
+    if need_atom:
+        atom = compute_atomgraph(structure_file, chain_id, q_resnum)
+        for k, v in atom.items():
+            batch[k] = v.to(device)
+
     with torch.no_grad():
         out = module(batch)
     binary_logit = out["binary_logit"].cpu()
     prob = torch.sigmoid(binary_logit)
 
-    q = batch["is_query"].cpu().bool()
-    q_logit = binary_logit[q]
-    ranks = torch.empty_like(q_logit)
-    order = q_logit.argsort()
-    n = max(1, len(q_logit) - 1)
-    ranks[order] = torch.arange(len(q_logit), dtype=ranks.dtype) / n
-    # scatter back into a full-length vector aligned with prob's indexing
-    prob = prob.clone()
-    prob[q] = ranks
-    
+    ranks = torch.empty_like(binary_logit)
+    order = binary_logit.argsort()
+    n = max(1, nq - 1)
+    ranks[order] = torch.arange(nq, dtype=ranks.dtype) / n
+    prob = ranks
+
+    out_path = f"{out_dir}/predictions_gvpbind_results.csv"
     prob_by_res = {}
-    for i in range(len(batch["res_types"])):
-        prob_by_res[int(pdb_resnum[i])] = float(prob[i])
-        
-    return prob_by_res
+    with open(out_path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["Model", "Chain", "Residue Index", "Sequence", "Binding site probability"])
+        for i in range(nq):
+            w.writerow(["0", chain_id, int(seq_idx[i]) + 1,
+                        aa_seq[i], f"{float(prob[i]):.4f}"])
+            prob_by_res[(chain_id, int(q_resnum[i]))] = float(prob[i])

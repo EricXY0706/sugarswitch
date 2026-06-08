@@ -18,6 +18,7 @@ SaProt/foldseek/foldseek
 Spired/model/SPIRED-Fitness.pth
 Spired/model/SPIRED-Stab.pth
 GVP_Bind
+GVP_Bind_backup
 *.out
 test*
 run.sh
@@ -27,3 +28,5 @@ run_benchmark_prefilter*
 config_backup.py
 ESM-LoRA-Gly
 src/glycodesign_bb_hallucination.py
+nohup*
+*backup*
