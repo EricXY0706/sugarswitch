@@ -22,9 +22,6 @@ GVP_Bind_backup
 *.out
 test*
 run.sh
-run_nano.sh
-run_benchmark.py
-run_benchmark_prefilter*
 config_backup.py
 ESM-LoRA-Gly
 src/glycodesign_bb_hallucination.py
