@@ -1,20 +1,27 @@
+from __future__ import annotations
+
+from Bio.PDB.Atom import Atom
+from Bio.PDB.Residue import Residue
 import logging
 import os
-import shutil
 import subprocess
 import re
 import time
-from typing import Set, List, Tuple
+from typing import Any, DefaultDict, Dict, Iterable, Set, List, Optional, Tuple
 from tqdm import tqdm
 from pathlib import Path
 import tarfile
 import yaml
+import json
+import csv
 
 from Bio import SeqIO
 from Bio.PDB import PDBParser, MMCIFParser, PDBIO, Select, Structure, DSSP
 import pandas as pd
 import numpy as np
+import math
 from math import degrees
+from dataclasses import dataclass
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -39,6 +46,52 @@ AA_INTERACTIONS = {
     "H_bond": ["R", "K", "D", "E", "S", "T", "N", "Q", "Y"],
     "Hydrophobic": ["A", "V", "I", "L", "M", "F", "W", "Y"],
 
+}
+
+ONE_TO_THREE = {
+    "A": "ALA",
+    "R": "ARG",
+    "N": "ASN",
+    "D": "ASP",
+    "C": "CYS",
+    "Q": "GLN",
+    "E": "GLU",
+    "G": "GLY",
+    "H": "HIS",
+    "I": "ILE",
+    "L": "LEU",
+    "K": "LYS",
+    "M": "MET",
+    "F": "PHE",
+    "P": "PRO",
+    "S": "SER",
+    "T": "THR",
+    "W": "TRP",
+    "Y": "TYR",
+    "V": "VAL",
+}
+
+THREE_TO_ONE = {
+    "ALA": "A",
+    "ARG": "R",
+    "ASN": "N",
+    "ASP": "D",
+    "CYS": "C",
+    "GLN": "Q",
+    "GLU": "E",
+    "GLY": "G",
+    "HIS": "H",
+    "ILE": "I",
+    "LEU": "L",
+    "LYS": "K",
+    "MET": "M",
+    "PHE": "F",
+    "PRO": "P",
+    "SER": "S",
+    "THR": "T",
+    "TRP": "W",
+    "TYR": "Y",
+    "VAL": "V",
 }
 
 CHAIN_IDS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -918,157 +971,748 @@ class GlycanMover:
 
                     self._merge_structures(prot, glyc, glycan_chain, output_pdb, glycan_idx)
                     glycan_idx += 1
+
+class InteractionAnalyzer:
+    """
+    Calculate atom distances and infer common non-covalent interactions.
+
+    Notes:
+        - Hydrogen-bond angle is strongest when explicit hydrogens are present.
+          If hydrogens are missing, the class uses a conservative heavy-atom
+          donor-neighbor--donor--acceptor angle approximation.
+        - Salt bridges are detected between positively charged N atoms and
+          negatively charged O atoms on charged side chains.
+        - Hydrophobic interactions are reported once per residue when the
+          residue and its sequence/spatial residue neighbors are hydrophobic.
+        - Disulfide bonds are detected between Cys/Cyx SG atoms.
+    """
+
+    @dataclass(frozen=True)
+    class InteractionCutoffs:
+        """Geometry cutoffs in Angstrom/degrees."""
+
+        hydrogen_bond_da_max: float = 3.5
+        hydrogen_bond_ha_max: float = 2.6
+        hydrogen_bond_dha_min_angle: float = 120.0
+        heavy_atom_hbond_angle_min: float = 90.0
+        salt_bridge_max: float = 4.0
+        hydrophobic_max: float = 4.5
+        disulfide_bond_max: float = 2.2
+        sequence_separation: int = 1
+
+    @dataclass(frozen=True)
+    class AtomMetadata:
+        """Atom metadata kept separately from the numeric distance matrix."""
+
+        residue_key: Tuple[str, int, str, str]
+        residue_id: str
+        atom_name: str
+        element: str
+        atom: Atom
+
+    DONOR_ATOMS = {
+        "ARG": {"NE", "NH1", "NH2"},
+        "ASN": {"ND2"},
+        "GLN": {"NE2"},
+        "HIS": {"ND1", "NE2"},
+        "LYS": {"NZ"},
+        "SER": {"OG"},
+        "THR": {"OG1"},
+        "TRP": {"NE1"},
+        "TYR": {"OH"},
+        "CYS": {"SG"},
+    }
+
+    ACCEPTOR_ATOMS = {
+        "ASP": {"OD1", "OD2"},
+        "GLU": {"OE1", "OE2"},
+        "ASN": {"OD1"},
+        "GLN": {"OE1"},
+        "HIS": {"ND1", "NE2"},
+        "SER": {"OG"},
+        "THR": {"OG1"},
+        "TYR": {"OH"},
+        "CYS": {"SG"},
+    }
+
+    POSITIVE_ATOMS = {
+        "ARG": {"NH1", "NH2", "NE"},
+        "LYS": {"NZ"},
+        "HIS": {"ND1", "NE2"},
+    }
+
+    NEGATIVE_ATOMS = {
+        "ASP": {"OD1", "OD2"},
+        "GLU": {"OE1", "OE2"},
+    }
+
+    HYDROPHOBIC_RESIDUES = {"ALA", "VAL", "LEU", "ILE", "MET", "PHE", "TRP", "TYR", "PRO", "CYS"}
+
+    BACKBONE_HBOND_SALT_ATOMS = {"N", "O", "OXT"}
+
+    def __init__(
+        self,
+        structure_file: str | Path,
+        cutoffs: Optional["InteractionAnalyzer.InteractionCutoffs"] = None,
+        include_hetero: bool = False,
+        model_index: int = 0,
+        chain_id: Optional[str] = None,
+    ) -> None:
+        self.structure_file = Path(structure_file)
+        self.cutoffs = cutoffs or self.InteractionCutoffs()
+        self.include_hetero = include_hetero
+        self.model_index = model_index
+        self.chain_id = chain_id
+        self.structure = self._load_structure()
+        self._residue_lookup: Dict[Tuple[str, int, str, str], Residue] = {}
+        self._atom_lookup: Dict[Tuple[Tuple[str, int, str, str], str], Atom] = {}
+
+    def analyze(self) -> Dict[str, Any]:
+        """Return {Residue_id: list of interactions}."""
+        residues = list(self._iter_residues())
+        self._residue_lookup = {self.residue_key(residue): residue for residue in residues}
+        atoms_by_residue = {
+            self.residue_key(residue): list(self._iter_atoms(residue))
+            for residue in residues
+        }
+        self._atom_lookup = {
+            (residue_key, self.atom_name(atom)): atom
+            for residue_key, atoms in atoms_by_residue.items()
+            for atom in atoms
+        }
+
+        atom_metadata, distance_matrix = self.calculate_atom_distance_matrix(atoms_by_residue)
+        interactions = self.infer_interactions(atom_metadata, distance_matrix, atoms_by_residue)
+        return self.group_interactions_by_residue(interactions)
+
+    def calculate_atom_distance_matrix(
+        self, atoms_by_residue: Dict[Tuple[str, int, str, str], List[Atom]]
+    ) -> Tuple[List["InteractionAnalyzer.AtomMetadata"], np.ndarray]:
+        """
+        Build a full atom-atom distance matrix once.
+
+        Atom identity is stored in metadata; downstream interaction inference
+        uses metadata indices and reads distances directly from this matrix.
+        """
+        atom_metadata: List[InteractionAnalyzer.AtomMetadata] = []
+        coordinates = []
+
+        for residue_key, atoms in atoms_by_residue.items():
+            residue_id = self.format_residue_key(residue_key)
+            for atom in atoms:
+                atom_metadata.append(
+                    self.AtomMetadata(
+                        residue_key=residue_key,
+                        residue_id=residue_id,
+                        atom_name=self.atom_name(atom),
+                        element=self.element(atom),
+                        atom=atom,
+                    )
+                )
+                coordinates.append(atom.coord)
+
+        if not coordinates:
+            return atom_metadata, np.empty((0, 0), dtype=float)
+
+        coordinate_matrix = np.asarray(coordinates, dtype=float)
+        deltas = coordinate_matrix[:, None, :] - coordinate_matrix[None, :, :]
+        distance_matrix = np.linalg.norm(deltas, axis=2)
+        return atom_metadata, distance_matrix
+
+    def infer_interactions(
+        self,
+        atom_metadata: List["InteractionAnalyzer.AtomMetadata"],
+        distance_matrix: np.ndarray,
+        atoms_by_residue: Dict[Tuple[str, int, str, str], List[Atom]],
+    ) -> List[Dict[str, Any]]:
+        """Infer hydrogen bonds, salt bridges, disulfides, and hydrophobic environments."""
+        interactions: List[Dict[str, Any]] = []
+        max_cutoff = max(
+            self.cutoffs.hydrogen_bond_da_max,
+            self.cutoffs.salt_bridge_max,
+            self.cutoffs.disulfide_bond_max,
+        )
+
+        for i, meta_a in enumerate(atom_metadata):
+            for j in range(i + 1, len(atom_metadata)):
+                meta_b = atom_metadata[j]
+                if not self._pair_in_scope(meta_a.residue_key, meta_b.residue_key):
+                    continue
+                if self._skip_residue_pair(meta_a.residue_key, meta_b.residue_key):
+                    continue
+
+                distance = round(float(distance_matrix[i, j]), 3)
+                if distance > max_cutoff:
+                    continue
+
+                disulfide = self._disulfide_bond(
+                    meta_a.residue_key,
+                    meta_a.atom_name,
+                    meta_b.residue_key,
+                    meta_b.atom_name,
+                    distance,
+                )
+                if disulfide is not None:
+                    interactions.append(disulfide)
+
+                hbond = self._hydrogen_bond(
+                    meta_a.residue_key,
+                    meta_a.atom_name,
+                    meta_b.residue_key,
+                    meta_b.atom_name,
+                    distance,
+                )
+                if hbond is not None:
+                    interactions.append(hbond)
+
+                salt_bridge = self._salt_bridge(
+                    meta_a.residue_key,
+                    meta_a.atom_name,
+                    meta_b.residue_key,
+                    meta_b.atom_name,
+                    distance,
+                )
+                if salt_bridge is not None:
+                    interactions.append(salt_bridge)
+
+        interactions.extend(
+            self._hydrophobic_environment_interactions(
+                atom_metadata,
+                distance_matrix,
+                atoms_by_residue,
+            )
+        )
+
+        return interactions
+
+    def group_interactions_by_residue(
+        self,
+        interactions: List[Dict[str, Any]],
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Return only residues with interactions: {Residue_id: [interaction, ...]}."""
+        grouped: DefaultDict[str, List[Dict[str, Any]]] = defaultdict(list)
+
+        for interaction in interactions:
+            if "residue" in interaction:
+                grouped[interaction["residue"]].append(interaction)
+            else:
+                grouped[interaction["residue_a"]].append(interaction)
+                grouped[interaction["residue_b"]].append(interaction)
+
+        return dict(grouped)
     
-class InteractionCheck:
-    def __init__(self) -> None:
-        """
-        Initialize the InteractionCheck object.
-        """
-        pass
-
-    def _extract_cb(
-        self,
-        structure: Structure,
-        chain_id: str = None,
-    ) -> Tuple[np.ndarray, List[int]]:
-        """
-        Extract Cβ (or Cα for Gly) coordinates and their residue IDs.
-
-        Args:
-            structure (Structure): Biopython Structure object parsed from a PDB/mmCIF file.
-
-        Returns:
-            coords (np.ndarray): Cβ/Cα coordinates with shape (N, 3).
-            res_ids (List[int]): Corresponding residue sequence numbers from the structure.
-        """
-        coords = []
-        res_ids = []
-        for model in structure:
-            for chain in model:
-                if chain_id is None or chain.get_id() == chain_id:
-                    for residue in chain:
-                        res = residue.resname
-                        for atom in residue:
-                            name = atom.get_fullname().strip(" ")
-                            if (res == "GLY" and name == "CA") or (res != "GLY" and name == "CB"):
-                                coords.append(atom.coord)
-                                res_ids.append(f"{chain.get_id()}_{residue.get_id()[1]}")
-                                break
-            break
-        return np.array(coords), res_ids
-
-    def _compute_contact_map(
-        self,
-        coords: np.ndarray
-    ) -> np.ndarray:
-        """
-        Compute pairwise Euclidean distances between coordinates.
-
-        Args:
-            coords (np.ndarray): An array of atom coordinates with shape (N, 3).
-
-        Returns:
-            np.ndarray: A distance matrix of shape (N, N), where each entry (i, j) is the distance between coords[i] and coords[j].
-        """
-        diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
-        dists = np.linalg.norm(diff, axis=-1)
-        return dists
-    
-    def get_inter_interaction_aa(
-        self,
-        structure_file: str,
-        chain_id: str,
-        dist_threshold: float = 6.0,
+    def extract_ppi_sites(self, 
+        chain_id: str, 
+        result: Optional[Dict[str, Any]] = None,
     ) -> Set[int]:
-        """
-        Get inter-chain interacting residues on one specific chain.
-
-        Args:
-            structure_file (str): Path to the input structure file (e.g., mmCIF or PDB).
-            chain_id (str): Chain ID to extract Cβ/Cα coordinates.
-
-        Returns:
-            Set[int]: A set of residue sequence numbers that are in contact with the target residues.
-        """
-        structure, _ = StructureLoader.load_structure(structure_file)
-        coords_cb, res_ids = self._extract_cb(structure=structure)
-        contact = self._compute_contact_map(coords=coords_cb)
-        mask = np.full(contact.shape, 1.0)
-        groups = defaultdict(list)
-        for i, res_id in enumerate(res_ids):
-            chain, _ = res_id.split("_")
-            groups[chain].append(i)
+        """Extract all the PPI sites on the given chain based on the analyzer results"""
+        result = result or self.analyze()
         
-        for _, idx_list in groups.items():
-            idx = np.array(idx_list)
-            mask[np.ix_(idx, idx)] = 1e8
-        
-        contact = contact * mask
-        np.fill_diagonal(contact, 1e8)
-
-        interacting_idxs = np.unique(np.where(contact <= dist_threshold)[0])
-        inter_interactions_aa = [int(res_ids[i].split("_")[1]) for i in interacting_idxs if res_ids[i].split("_")[0] == chain_id]
-        inter_interactions_aa = set(inter_interactions_aa)
-
-        return inter_interactions_aa
-
-    def get_intra_interaction_aa(
-        self,
-        structure_file: str,
-        chain_id: str,
-        positions: List[int],
-        dist_threshold: float = 6.0,
-        is_self_included: bool = True,
-        num_neighbors: int = 3
-    ) -> Set[int]:
-        """
-        Extract possible interactions in the structure, given the target residues.
-
-        Args:
-            structure_file (str): Path to the input structure file (e.g., mmCIF or PDB).
-            positions (List[int]): List of target residue sequence numbers (starting from 1).
-            dist_threshold (float): CB distance threshold to define contact (in Å). Default is 6.0.
-            is_self_included (bool): Whether to include themselves in the result, for detecting interacting residues around non-editable residues. Default is True.
-            num_neighbors (int): Number of neighbor residues (in sequence) to include around each target residue.
-
-        Returns:
-            Set[int]: A set of residue sequence numbers that are in contact with the target residues.
-        """
-        structure, _ = StructureLoader.load_structure(structure_file)
-        coords_cb, res_ids = self._extract_cb(structure=structure, chain_id=chain_id)
-        contact = self._compute_contact_map(coords=coords_cb)
-        
-        pts = []
-        for pt in positions:
-            if isinstance(pt, int):
-                pts.append(pt)
-            elif isinstance(pt, str) and "-" in pt:
-                start, end = int(pt.split("-")[0]), int(pt.split("-")[1])
-                for p in range(start, end+1):
-                    pts.append(p)
-
-        interacting_aas = []
-        for p in pts:
-            if p not in res_ids:
+        ppi_sites = set()
+        for residue_id, interactions in result.items():
+            chain, resseq, _resname = residue_id.split(":")
+            if chain != chain_id:
                 continue
-            p_idx = res_ids.index(p)
-            contact_p = contact[p_idx, :]
-            interacting_idxs = np.where(contact_p <= dist_threshold)[0]
-            interacting_res_ids = [res_ids[i] for i in interacting_idxs]
-            interacting_aas.extend(interacting_res_ids)
 
-        if is_self_included:
-            return set(interacting_aas) | set(
-                [p + i for p in pts for i in range(1, num_neighbors + 1) if (p + i) <= int(res_ids[-1].split("_")[1])]
-            ) | set(
-                [p - i for p in pts for i in range(1, num_neighbors + 1) if (p - i) > 0]
-            )
+            for interaction in interactions:
+                if "residue" in interaction:
+                    continue
+
+                res_a = interaction["residue_a"]
+                res_b = interaction["residue_b"]
+
+                chain_a, resseq_a, _ = res_a.split(":")
+                chain_b, resseq_b, _ = res_b.split(":")
+
+                if chain_a == chain_id and chain_b != chain_id:
+                    ppi_sites.add(int(resseq_a))
+                elif chain_b == chain_id and chain_a != chain_id:
+                    ppi_sites.add(int(resseq_b))
+
+        return ppi_sites
+    
+    def extract_sites_interacting_with_hotspots(self, 
+        chain_id: str, 
+        hotspots: List[int], 
+        result: Optional[Dict[str, Any]] = None, 
+        hotspots_included: bool = True,
+    ) -> Set[int]:
+        """Extract all the sites interacting with the given hotspots on the given chain based on the analyzer result"""
+        result = result or self.analyze()
+        hotspot_set = set(hotspots)
+        interacting_sites = set()
+
+        for residue_id, interactions in result.items():
+            chain, resseq, _resname = residue_id.split(":")
+            if chain != chain_id:
+                continue
+
+            for interaction in interactions:
+                if "residue" in interaction:
+                    continue
+
+                res_a = interaction["residue_a"]
+                res_b = interaction["residue_b"]
+
+                chain_a, resseq_a, _ = res_a.split(":")
+                chain_b, resseq_b, _ = res_b.split(":")
+
+                if chain_a != chain_id or chain_b != chain_id:
+                    continue
+
+                pos_a = int(resseq_a)
+                pos_b = int(resseq_b)
+
+                if pos_a in hotspot_set and pos_b not in hotspot_set:
+                    interacting_sites.add(pos_b)
+                elif pos_b in hotspot_set and pos_a not in hotspot_set:
+                    interacting_sites.add(pos_a)
+                    
+        if hotspots_included:
+            return interacting_sites | hotspot_set
         else:
-            return set(interacting_aas) - set(pts) - set(
-                [p + i for p in pts for i in range(1, num_neighbors + 1) if (p + i) <= int(res_ids[-1].split("_")[1])]
-            ) - set(
-                [p - i for p in pts for i in range(1, num_neighbors + 1) if (p - i) > 0]
+            return interacting_sites
+
+    def save_json(self, output_file: str | Path, result: Optional[Dict[str, Any]] = None) -> None:
+        """Analyze and save the result dictionary as JSON."""
+        result = result or self.analyze()
+        with Path(output_file).open("w", encoding="utf-8") as handle:
+            json.dump(result, handle, ensure_ascii=False, indent=2)
+
+    def save_csv(self, output_file: str | Path, result: Optional[Dict[str, Any]] = None) -> None:
+        """Analyze and save {Residue_id: list of interactions} as a flat CSV table."""
+        result = result or self.analyze()
+        fieldnames = [
+            "residue_id",
+            "interaction_type",
+            "partner_residue",
+            "residue_a",
+            "residue_b",
+            "atom_a",
+            "atom_b",
+            "distance",
+            "donor",
+            "acceptor",
+            "angle",
+            "angle_type",
+            "sequence_neighbors",
+            "spatial_neighbors",
+            "hydrophobic_neighbor_count",
+        ]
+
+        with Path(output_file).open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for residue_id, interactions in result.items():
+                for interaction in interactions:
+                    if "residue" in interaction:
+                        partner = ""
+                        residue_a = interaction["residue"]
+                        residue_b = ""
+                    else:
+                        partner = (
+                            interaction["residue_b"]
+                            if interaction["residue_a"] == residue_id
+                            else interaction["residue_a"]
+                        )
+                        residue_a = interaction["residue_a"]
+                        residue_b = interaction["residue_b"]
+                    writer.writerow(
+                        {
+                            "residue_id": residue_id,
+                            "interaction_type": interaction["type"],
+                            "partner_residue": partner,
+                            "residue_a": residue_a,
+                            "residue_b": residue_b,
+                            "atom_a": interaction.get("atom_a", ""),
+                            "atom_b": interaction.get("atom_b", ""),
+                            "distance": interaction.get("distance", ""),
+                            "donor": interaction.get("donor", ""),
+                            "acceptor": interaction.get("acceptor", ""),
+                            "angle": interaction.get("angle", ""),
+                            "angle_type": interaction.get("angle_type", ""),
+                            "sequence_neighbors": ";".join(interaction.get("sequence_neighbors", [])),
+                            "spatial_neighbors": ";".join(interaction.get("spatial_neighbors", [])),
+                            "hydrophobic_neighbor_count": interaction.get("hydrophobic_neighbor_count", ""),
+                        }
+                    )
+
+    def _load_structure(self):
+        if self.structure_file.suffix.lower() in {".cif", ".mmcif"}:
+            parser = MMCIFParser(QUIET=True)
+        else:
+            parser = PDBParser(QUIET=True)
+        return parser.get_structure(self.structure_file.stem, str(self.structure_file))
+
+    def _iter_residues(self) -> Iterable[Residue]:
+        model = list(self.structure)[self.model_index]
+        for chain in model:
+            for residue in chain:
+                hetero_flag = residue.id[0].strip()
+                if hetero_flag and not self.include_hetero:
+                    continue
+                if residue.get_resname() == "HOH":
+                    continue
+                yield residue
+
+    def _iter_atoms(self, residue: Residue) -> Iterable[Atom]:
+        for atom in residue.get_atoms():
+            yield atom
+
+    @classmethod
+    def residue_key(cls, residue: Residue) -> Tuple[str, int, str, str]:
+        chain_id = residue.get_parent().id
+        hetero_flag, resseq, icode = residue.id
+        return (chain_id, int(resseq), icode.strip() or "", residue.get_resname())
+
+    @staticmethod
+    def format_residue_key(key: Tuple[str, int, str, str]) -> str:
+        chain, resseq, _icode, resname = key
+        return f"{chain}:{resseq}:{resname}"
+
+    @staticmethod
+    def atom_name(atom: Atom) -> str:
+        """Return the complete PDB/mmCIF atom name, e.g. OD1, NH1, CA."""
+        return atom.get_fullname().strip()
+
+    @staticmethod
+    def distance(atom_a: Atom, atom_b: Atom) -> float:
+        return float(atom_a - atom_b)
+
+    @staticmethod
+    def element(atom: Atom) -> str:
+        element = (atom.element or "").strip().upper()
+        if element:
+            return element
+        return "".join(ch for ch in InteractionAnalyzer.atom_name(atom) if ch.isalpha())[0].upper()
+
+    def _skip_residue_pair(
+        self,
+        key_a: Tuple[str, int, str, str],
+        key_b: Tuple[str, int, str, str],
+    ) -> bool:
+        same_chain = key_a[0] == key_b[0]
+        same_residue = key_a[:3] == key_b[:3]
+        sequence_neighbors = (
+            same_chain
+            and key_a[2] == key_b[2]
+            and abs(key_a[1] - key_b[1]) <= self.cutoffs.sequence_separation
+        )
+        return same_residue or sequence_neighbors
+
+    def _pair_in_scope(
+        self,
+        key_a: Tuple[str, int, str, str],
+        key_b: Tuple[str, int, str, str],
+    ) -> bool:
+        """Keep target-chain internal pairs and target-chain/other-chain pairs."""
+        if self.chain_id is None:
+            return True
+        return key_a[0] == self.chain_id or key_b[0] == self.chain_id
+
+    def _single_residue_in_scope(self, residue_key: Tuple[str, int, str, str]) -> bool:
+        if self.chain_id is None:
+            return True
+        return residue_key[0] == self.chain_id
+
+    def _hydrogen_bond(
+        self,
+        res_a: Tuple[str, int, str, str],
+        atom_a: str,
+        res_b: Tuple[str, int, str, str],
+        atom_b: str,
+        distance: float,
+    ) -> Optional[Dict[str, Any]]:
+        if distance > self.cutoffs.hydrogen_bond_da_max:
+            return None
+        if atom_a in self.BACKBONE_HBOND_SALT_ATOMS or atom_b in self.BACKBONE_HBOND_SALT_ATOMS:
+            return None
+        if self._is_disulfide_atom_pair(res_a, atom_a, res_b, atom_b):
+            return None
+
+        candidates = []
+        if self._is_donor(res_a[3], atom_a) and self._is_acceptor(res_b[3], atom_b):
+            candidates.append((res_a, atom_a, res_b, atom_b))
+        if self._is_donor(res_b[3], atom_b) and self._is_acceptor(res_a[3], atom_a):
+            candidates.append((res_b, atom_b, res_a, atom_a))
+
+        for donor_res, donor_atom, acceptor_res, acceptor_atom in candidates:
+            angle_info = self._hbond_angle_ok(donor_res, donor_atom, acceptor_res, acceptor_atom)
+            if angle_info["ok"]:
+                return {
+                    "type": "hydrogen_bond",
+                    "residue_a": self.format_residue_key(res_a),
+                    "residue_b": self.format_residue_key(res_b),
+                    "atom_a": atom_a,
+                    "atom_b": atom_b,
+                    "distance": distance,
+                    "donor": f"{self.format_residue_key(donor_res)}:{donor_atom}",
+                    "acceptor": f"{self.format_residue_key(acceptor_res)}:{acceptor_atom}",
+                    "angle": angle_info["angle"],
+                    "angle_type": angle_info["type"],
+                }
+
+        return None
+
+    def _salt_bridge(
+        self,
+        res_a: Tuple[str, int, str, str],
+        atom_a: str,
+        res_b: Tuple[str, int, str, str],
+        atom_b: str,
+        distance: float,
+    ) -> Optional[Dict[str, Any]]:
+        if distance > self.cutoffs.salt_bridge_max:
+            return None
+        if atom_a in self.BACKBONE_HBOND_SALT_ATOMS or atom_b in self.BACKBONE_HBOND_SALT_ATOMS:
+            return None
+
+        pos_neg = (
+            self._is_positive(res_a[3], atom_a) and self._is_negative(res_b[3], atom_b)
+        )
+        neg_pos = (
+            self._is_negative(res_a[3], atom_a) and self._is_positive(res_b[3], atom_b)
+        )
+
+        if not (pos_neg or neg_pos):
+            return None
+
+        return {
+            "type": "salt_bridge",
+            "residue_a": self.format_residue_key(res_a),
+            "residue_b": self.format_residue_key(res_b),
+            "atom_a": atom_a,
+            "atom_b": atom_b,
+            "distance": distance,
+        }
+
+    def _hydrophobic_environment_interactions(
+        self,
+        atom_metadata: List["InteractionAnalyzer.AtomMetadata"],
+        distance_matrix: np.ndarray,
+        atoms_by_residue: Dict[Tuple[str, int, str, str], List[Atom]],
+    ) -> List[Dict[str, Any]]:
+        interactions: List[Dict[str, Any]] = []
+        residue_keys = list(atoms_by_residue)
+        residue_atom_indices: DefaultDict[Tuple[str, int, str, str], List[int]] = defaultdict(list)
+
+        for atom_index, metadata in enumerate(atom_metadata):
+            residue_atom_indices[metadata.residue_key].append(atom_index)
+
+        for residue_key in residue_keys:
+            if not self._single_residue_in_scope(residue_key):
+                continue
+            if not self._is_hydrophobic_residue(residue_key[3]):
+                continue
+
+            sequence_neighbors = self._sequence_neighbors(residue_key, residue_keys)
+            spatial_neighbors = self._spatial_neighbors(
+                residue_key,
+                residue_keys,
+                residue_atom_indices,
+                distance_matrix,
             )
+            if not sequence_neighbors or not spatial_neighbors:
+                continue
+            if not all(self._is_hydrophobic_residue(neighbor[3]) for neighbor in sequence_neighbors):
+                continue
+            if not all(self._is_hydrophobic_residue(neighbor[3]) for neighbor in spatial_neighbors):
+                continue
+
+            interactions.append(
+                {
+                    "type": "hydrophobic",
+                    "residue": self.format_residue_key(residue_key),
+                    "residue_name": residue_key[3],
+                    "sequence_neighbors": [
+                        self.format_residue_key(neighbor) for neighbor in sequence_neighbors
+                    ],
+                    "spatial_neighbors": [
+                        self.format_residue_key(neighbor) for neighbor in spatial_neighbors
+                    ],
+                    "hydrophobic_neighbor_count": len(sequence_neighbors) + len(spatial_neighbors),
+                    "spatial_cutoff": self.cutoffs.hydrophobic_max,
+                    "sequence_window": self.cutoffs.sequence_separation,
+                }
+            )
+
+        return interactions
+
+    def _sequence_neighbors(
+        self,
+        residue_key: Tuple[str, int, str, str],
+        residue_keys: List[Tuple[str, int, str, str]],
+    ) -> List[Tuple[str, int, str, str]]:
+        return [
+            key
+            for key in residue_keys
+            if key != residue_key
+            and key[0] == residue_key[0]
+            and key[2] == residue_key[2]
+            and abs(key[1] - residue_key[1]) <= self.cutoffs.sequence_separation
+        ]
+
+    def _spatial_neighbors(
+        self,
+        residue_key: Tuple[str, int, str, str],
+        residue_keys: List[Tuple[str, int, str, str]],
+        residue_atom_indices: Dict[Tuple[str, int, str, str], List[int]],
+        distance_matrix: np.ndarray,
+    ) -> List[Tuple[str, int, str, str]]:
+        neighbors = []
+        source_indices = residue_atom_indices[residue_key]
+
+        for candidate_key in residue_keys:
+            if candidate_key == residue_key:
+                continue
+            if not self._pair_in_scope(residue_key, candidate_key):
+                continue
+
+            candidate_indices = residue_atom_indices[candidate_key]
+            min_distance = float(
+                distance_matrix[np.ix_(source_indices, candidate_indices)].min()
+            )
+            if min_distance <= self.cutoffs.hydrophobic_max:
+                neighbors.append(candidate_key)
+
+        return neighbors
+
+    def _disulfide_bond(
+        self,
+        res_a: Tuple[str, int, str, str],
+        atom_a: str,
+        res_b: Tuple[str, int, str, str],
+        atom_b: str,
+        distance: float,
+    ) -> Optional[Dict[str, Any]]:
+        if distance > self.cutoffs.disulfide_bond_max:
+            return None
+        if not self._is_disulfide_atom_pair(res_a, atom_a, res_b, atom_b):
+            return None
+
+        return {
+            "type": "disulfide_bond",
+            "residue_a": self.format_residue_key(res_a),
+            "residue_b": self.format_residue_key(res_b),
+            "atom_a": atom_a,
+            "atom_b": atom_b,
+            "distance": distance,
+        }
+
+    def _is_disulfide_atom_pair(
+        self,
+        res_a: Tuple[str, int, str, str],
+        atom_a: str,
+        res_b: Tuple[str, int, str, str],
+        atom_b: str,
+    ) -> bool:
+        cys_names = {"CYS", "CYX"}
+        return (
+            res_a[3] in cys_names
+            and res_b[3] in cys_names
+            and atom_a == "SG"
+            and atom_b == "SG"
+        )
+
+    def _hbond_angle_ok(
+        self,
+        donor_res: Tuple[str, int, str, str],
+        donor_atom: str,
+        acceptor_res: Tuple[str, int, str, str],
+        acceptor_atom: str,
+    ) -> Dict[str, Any]:
+        donor = self._get_atom(donor_res, donor_atom)
+        acceptor = self._get_atom(acceptor_res, acceptor_atom)
+        if donor is None or acceptor is None:
+            return {"ok": True, "angle": None, "type": "not_available"}
+
+        hydrogens = self._attached_hydrogens(donor_res, donor)
+        for hydrogen in hydrogens:
+            ha_distance = self.distance(hydrogen, acceptor)
+            if ha_distance > self.cutoffs.hydrogen_bond_ha_max:
+                continue
+            angle = self.angle(donor.coord, hydrogen.coord, acceptor.coord)
+            if angle >= self.cutoffs.hydrogen_bond_dha_min_angle:
+                return {"ok": True, "angle": round(angle, 1), "type": "D-H-A"}
+
+        if hydrogens:
+            return {"ok": False, "angle": None, "type": "D-H-A"}
+
+        donor_neighbor = self._donor_heavy_neighbor(donor_res, donor)
+        if donor_neighbor is None:
+            return {"ok": True, "angle": None, "type": "no_hydrogen_or_neighbor"}
+
+        angle = self.angle(donor_neighbor.coord, donor.coord, acceptor.coord)
+        return {
+            "ok": angle >= self.cutoffs.heavy_atom_hbond_angle_min,
+            "angle": round(angle, 1),
+            "type": "heavy_atom_approximation",
+        }
+
+    def _get_atom(self, residue_key: Tuple[str, int, str, str], atom_name: str) -> Optional[Atom]:
+        return self._atom_lookup.get((residue_key, atom_name))
+
+    def _get_residue(self, residue_key: Tuple[str, int, str, str]) -> Optional[Residue]:
+        return self._residue_lookup.get(residue_key)
+
+    def _attached_hydrogens(self, residue_key: Tuple[str, int, str, str], donor: Atom) -> List[Atom]:
+        residue = self._get_residue(residue_key)
+        if residue is None:
+            return []
+        hydrogens = []
+        for atom in residue.get_atoms():
+            if self.element(atom) == "H" and self.distance(atom, donor) <= 1.25:
+                hydrogens.append(atom)
+        return hydrogens
+
+    def _donor_heavy_neighbor(
+        self, residue_key: Tuple[str, int, str, str], donor: Atom
+    ) -> Optional[Atom]:
+        residue = self._get_residue(residue_key)
+        if residue is None:
+            return None
+        best_atom = None
+        best_distance = float("inf")
+        for atom in residue.get_atoms():
+            if atom is donor or self.element(atom) == "H":
+                continue
+            distance = self.distance(atom, donor)
+            if 1.1 <= distance <= 1.9 and distance < best_distance:
+                best_atom = atom
+                best_distance = distance
+        return best_atom
+
+    def _is_donor(self, resname: str, atom_name: str) -> bool:
+        return atom_name in self.DONOR_ATOMS.get(resname, set())
+
+    def _is_acceptor(self, resname: str, atom_name: str) -> bool:
+        return atom_name in self.ACCEPTOR_ATOMS.get(resname, set())
+
+    def _is_positive(self, resname: str, atom_name: str) -> bool:
+        return atom_name in self.POSITIVE_ATOMS.get(resname, set())
+
+    def _is_negative(self, resname: str, atom_name: str) -> bool:
+        return atom_name in self.NEGATIVE_ATOMS.get(resname, set())
+
+    def _is_hydrophobic_residue(self, resname: str) -> bool:
+        return resname in self.HYDROPHOBIC_RESIDUES
+
+    @staticmethod
+    def angle(
+        point_a: Tuple[float, float, float],
+        point_b: Tuple[float, float, float],
+        point_c: Tuple[float, float, float],
+    ) -> float:
+        """Return angle ABC in degrees."""
+        ba = [a - b for a, b in zip(point_a, point_b)]
+        bc = [c - b for c, b in zip(point_c, point_b)]
+        dot = sum(x * y for x, y in zip(ba, bc))
+        norm_ba = math.sqrt(sum(x * x for x in ba))
+        norm_bc = math.sqrt(sum(x * x for x in bc))
+        if norm_ba == 0 or norm_bc == 0:
+            return 0.0
+        cosine = max(-1.0, min(1.0, dot / (norm_ba * norm_bc)))
+        return math.degrees(math.acos(cosine))
 
 class ClashCheck:
     def __init__(self) -> None:
@@ -1726,7 +2370,6 @@ class prefilter_report:
 
         with open(self.output_html, "w") as f:
             f.write(html)
-
 
 class designer_report:
     def __init__(
