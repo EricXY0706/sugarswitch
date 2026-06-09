@@ -106,20 +106,7 @@ echo "[INFO] Installing DSSP..."
 conda install -c ostrokach dssp -y
 
 # -------------------------------
-# 6. LigandMPNN
-# -------------------------------
-echo "[INFO] Installing LigandMPNN..."
-git clone https://github.com/dauparas/LigandMPNN.git
-cd LigandMPNN
-mkdir -p ./model_params
-wget -q https://files.ipd.uw.edu/pub/ligandmpnn/solublempnn_v_48_002.pt -O ./model_params/solublempnn_v_48_002.pt
-wget -q https://files.ipd.uw.edu/pub/ligandmpnn/solublempnn_v_48_010.pt -O ./model_params/solublempnn_v_48_010.pt
-wget -q https://files.ipd.uw.edu/pub/ligandmpnn/solublempnn_v_48_020.pt -O ./model_params/solublempnn_v_48_020.pt
-wget -q https://files.ipd.uw.edu/pub/ligandmpnn/solublempnn_v_48_030.pt -O ./model_params/solublempnn_v_48_030.pt
-cd ..
-
-# -------------------------------
-# 7. Python dependencies
+# 6. Python dependencies
 # -------------------------------
 echo "[INFO] Installing Python dependencies..."
 
