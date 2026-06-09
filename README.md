@@ -67,7 +67,7 @@
       ```
    
    - **Pipeline**:  
-      ➡️ Run the pipeline with both prefilter and designer
+      ➡️ Run the pipeline with both **Prefilter** and **Designer**
       ```Python
       # An example
 
@@ -83,7 +83,7 @@
          --add_pll_loss True \ # This makes the sequence more natural but significantly increases computational overhead
          --gpu_id 0
       ```
-2. **Optionally Update the configrations in `config.py`**
+2. **Optionally update the configrations in `config.py`**
    
    - **pipeline configurations**:  
       ⚠️ We recommand not adjusting the **EVCouplings** related configs (EVC, unless you are familiar with the parameters) and empirically pre-defined **glycan chain topological parameters** (bond length, angles, and dihedrals).  
