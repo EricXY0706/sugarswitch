@@ -1,6 +1,4 @@
 pipeline_configs = {
-    "Cb_interaction_threshold": 6.0,
-    "num_neighbors_to_shield": 3,
     "evc_min_sequence_distance": 6,
     "evc_theta": 0.8,
     "evc_num_iterations": 100,
