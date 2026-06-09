@@ -1,32 +1,9 @@
-"""Binary-head predictor for SaProt + atom-graph checkpoints, on novel PDBs.
-
-Same role and output as ``predict_binary`` (a per-residue ``Binding site
-probability`` CSV that proseek reads), but it additionally computes the two
-cached-at-training features INLINE so a SaProt/atomgraph checkpoint can run with
-no precomputed cache:
-
-  * SaProt 1280-d PLM embedding  (foldseek 3Di -> SaProt_650M_AF2)
-  * heavy-atom graph             (gemmi)
-
-Which features are computed is auto-detected from the checkpoint's
-``model_cfg`` hparams (``esm_dim``, ``atomgraph``) — no flags needed; a plain
-(no-PLM, no-atomgraph) checkpoint runs exactly like ``predict_binary``.
-
-Inference regime: these checkpoints are trained with ``drop_partner_chain=ON``
-(the atom-graph ``resid`` requires it), i.e. an **apo / query-chain-only**
-predictor. We therefore parse the complex, then slice to the query chain (remap
-it to chain 0) and build all features over the query residues only.
-
-Usage:
-    gvpbind-predict <pdb>_<chain> \
-        [--checkpoint CKPT]  (default: bundled GVP+SaProt+atom-graph model) \
-        --name RUN --predictions_folder OUT [--temperature T | --rank-normalize] \
-        [--saprot-model-dir DIR] [--foldseek-bin PATH]
+"""
+GVP-Bind: per-residue protein binding-site (interface) prediction.
+Credit to: https://github.com/LAJ-THU/GVP-Bind
 """
 from __future__ import annotations
-
 import csv
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -49,6 +26,7 @@ def gvpbind_predict(
     structure_file: str,
     chain_id: str,
     out_dir: str,
+    filename: str,
 ):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     parsed = parse_pdb_complex(structure_file, query_chain=chain_id)
@@ -104,7 +82,7 @@ def gvpbind_predict(
     ranks[order] = torch.arange(nq, dtype=ranks.dtype) / n
     prob = ranks
 
-    out_path = f"{out_dir}/predictions_gvpbind_results.csv"
+    out_path = f"{out_dir}/{filename}_gvpbind_results.csv"
     prob_by_res = {}
     with open(out_path, "w", newline="") as f:
         w = csv.writer(f)
@@ -112,4 +90,6 @@ def gvpbind_predict(
         for i in range(nq):
             w.writerow(["0", chain_id, int(seq_idx[i]) + 1,
                         aa_seq[i], f"{float(prob[i]):.4f}"])
-            prob_by_res[(chain_id, int(q_resnum[i]))] = float(prob[i])
+            prob_by_res[int(q_resnum[i])] = float(prob[i])
+    
+    return prob_by_res
