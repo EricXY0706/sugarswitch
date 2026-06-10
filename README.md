@@ -23,7 +23,7 @@
 > - Create and initiate **sugarswitch** conda environment with Python 3.10
 > - Install all the required dependencies
 > - Download Boltz2 weights
-> - Download SaProt, SPIRED, and GVP-Bind weights
+> - Download SaProt, SPIRED, GVP-Bind, and ESM-LoRA-Gly weights
 > - Download and install PyRosetta and DSSP
 
 ### Usage

@@ -4,7 +4,6 @@ boltz_ckpt/.gitattributes
 boltz_ckpt/boltz2_aff.ckpt
 boltz_ckpt/boltz2_conf.ckpt
 boltz_ckpt/mols.tar
-LigandMPNN
 plmc/
 SaProt/weights/PLMs/.gitattributes
 SaProt/weights/PLMs/config.json
@@ -21,7 +20,9 @@ Spired/model/SPIRED-Stab.pth
 test*
 run.sh
 config_backup.py
-ESM-LoRA-Gly
+ESM-LoRA-Gly/data
+ESM-LoRA-Gly/checkpoints/O-linked
+ESM-LoRA-Gly/checkpoints/N-linked/ESM-3B
 src/glycodesign_bb_hallucination.py
 nohup*
 *backup*
