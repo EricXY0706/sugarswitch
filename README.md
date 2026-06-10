@@ -1,5 +1,5 @@
 # SugarSwitch🪄
-**SugarSwitch** is a pipeline for protein N-glycosylation modification, enabling glycosylation sites filtering and sequence design.
+**SugarSwitch** is an AI-driven pipeline for protein N-glycoengineering, integrating glycosylation site screening, prioritization, and multi-site N-glycosylated sequence design.
 > 📄 **Paper**: [This is the title for the article](https://scholar.google.com/)  
 > 🌐 **Webserver**: [This is the name for the SugarSwitch webserver](https://scholar.google.com/)
 
@@ -14,16 +14,14 @@
    ```
 2. **Run the automated setup procedure**  
    ```bash
+   # Running the setup process with AI agent assistance to minimize software and hardware compatibility issues is recommended.
    chmod +x setup.sh
    ./setup.sh
    ```
-> ⚠️ **Notice**: [Foldseek](https://github.com/steineggerlab/foldseek) binary need to be downloaded from [here](https://drive.google.com/file/d/1B_9t3n_nlj8Y3Kpc_mMjtMdY0OPYa7Re/view) and place it in the `./SaProt/foldseek` folder.  
->
 > ✅ **This procedure will automatically**:
 > - Create and initiate **sugarswitch** conda environment with Python 3.10
 > - Install all the required dependencies
-> - Download Boltz2 weights
-> - Download SaProt, SPIRED, GVP-Bind, and ESM-LoRA-Gly weights
+> - Download Boltz2, SaProt, SPIRED, and ESM-LoRA-Gly weights
 > - Download and install PyRosetta and DSSP
 
 ### Usage
