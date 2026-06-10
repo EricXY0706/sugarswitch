@@ -36,12 +36,9 @@ pip install -U "boltz[cuda]"
 pip install -U huggingface_hub
 
 mkdir -p boltz_ckpt
-huggingface-cli download \
-    --resume-download \
-    --repo-type model \
+hf download \
+    --repo-type model boltz-community/boltz-2 \
     --local-dir boltz_ckpt \
-    --local-dir-use-symlinks False \
-    boltz-community/boltz-2
 
 if [[ -f boltz_ckpt/mols.tar ]]; then
     mkdir -p boltz_ckpt/mols
@@ -73,12 +70,9 @@ fi
 echo "[INFO] Downloading SaProt checkpoints..."
 mkdir -p SaProt/weights/PLMs
 
-huggingface-cli download \
-    --resume-download \
-    --repo-type model \
+hf download \
+    --repo-type model westlake-repl/SaProt_650M_PDB \
     --local-dir SaProt/weights/PLMs \
-    --local-dir-use-symlinks False \
-    westlake-repl/SaProt_650M_PDB
 
 echo "[INFO] Downloading Spired model..."
 mkdir -p Spired/model
