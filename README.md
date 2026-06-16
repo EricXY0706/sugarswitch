@@ -53,7 +53,7 @@
       ```Python
       # An example: Design 3 sequences with 5 N-glycosylation sites each
 
-      python run_sugarswitch designer \
+      python run_sugarswitch.py designer \
          --input "input_fasta_file" \
          --out_dir "output_dir" \
          --chain_id "CHAIN_ID" \
