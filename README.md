@@ -25,7 +25,7 @@
 > - Download and install PyRosetta and DSSP
 
 ### Usage
-1. **Simple Usage**
+1. Simple Usage
    - **Prefilter**:  
       ➡️ Run the Prefilter to scan and get the detailed information of the potential N-glycosylation sites
       ```Python
@@ -81,11 +81,11 @@
          --add_pll_loss True \ # This makes the sequence more natural but significantly increases computational overhead
          --gpu_id 0
       ```
-2. **Optionally update the configrations in `config.py`**
+2. Optionally update the configrations for **Prefilter** in `config.py`
    
    - **pipeline configurations**:  
       ⚠️ We recommand not adjusting the **EVCouplings** related configs (EVC, unless you are familiar with the parameters) and empirically pre-defined **glycan chain topological parameters** (bond length, angles, and dihedrals).  
-      ✅ `Conservation_threshold`, `evc_coupling_threshold`, and `sasa_cutoff` can be appropriately adjusted.
+      ✅ `conservation_threshold`, `evc_coupling_threshold`, and `sasa_cutoff` can be appropriately adjusted.
       ```Python
       # An example
       
