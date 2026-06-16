@@ -4,7 +4,7 @@ from pyrosetta import init, Pose
 import pyrosetta.rosetta.core.import_pose as ip
 from pyrosetta.toolbox.mutants import mutate_residue
 
-from src.util import StructureLoader, StructureFileEditor, InteractionCheck
+from src.util import StructureLoader, StructureFileEditor, InteractionAnalyzer
 from Bio.PDB import PDBIO
 from io import StringIO
 from itertools import product
@@ -118,16 +118,17 @@ class SSBuilder:
     def _find_interchain_potential_ss_pairs(
         self,
         structure_file: str,
+        chain_id: str,
         build_inter_chain_ss: bool = True,
     ):
-        interacation_checker = InteractionCheck()
+        analyzer = InteractionAnalyzer(structure_file=structure_file, chain_id=chain_id)
         chain_seq_dict = StructureLoader.get_sequences(structure_file)
         
         chain_potential_ss_sites_dict = dict()
         if build_inter_chain_ss:
             for chain_id, seq in chain_seq_dict.items():
-                interaction_aa = interacation_checker.get_inter_interaction_aa(structure_file=structure_file, chain_id=chain_id)
-                chain_potential_ss_sites_dict[chain_id] = interaction_aa
+                ppi_aa = analyzer.extract_ppi_sites(chain_id=chain_id)
+                chain_potential_ss_sites_dict[chain_id] = ppi_aa
                 
         chains = sorted(chain_potential_ss_sites_dict.keys())
         sites = [sorted(chain_potential_ss_sites_dict[c]) for c in chains]
