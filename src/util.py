@@ -1201,7 +1201,8 @@ class InteractionAnalyzer:
 
         return dict(grouped)
     
-    def extract_ppi_sites(self, 
+    def extract_ppi_sites(
+        self, 
         chain_id: str, 
         result: Optional[Dict[str, Any]] = None,
     ) -> Set[int]:
@@ -1231,7 +1232,34 @@ class InteractionAnalyzer:
 
         return ppi_sites
     
-    def extract_sites_interacting_with_hotspots(self, 
+    def extract_intra_interaction_sites(
+        self,
+        chain_id: str, 
+        result: Optional[Dict[str, Any]] = None,
+    ) -> set[int]:
+        """Extract all the intrachain interaction sites on the given chain"""
+        result = result or self.analyze()
+        intrachain_sites = set()
+        for interactions in result.values():
+            for interaction in interactions:
+                
+                if "residue_a" not in interaction or "residue_b" not in interaction:
+                    continue
+
+                res_a = interaction["residue_a"]
+                res_b = interaction["residue_b"]
+
+                chain_a, resseq_a, _resname_a = res_a.split(":")
+                chain_b, resseq_b, _resname_b = res_b.split(":")
+
+                if chain_a == chain_id and chain_b == chain_id:
+                    intrachain_sites.add(int(resseq_a))
+                    intrachain_sites.add(int(resseq_b))
+
+        return intrachain_sites
+    
+    def extract_sites_interacting_with_hotspots(
+        self, 
         chain_id: str, 
         hotspots: List[int], 
         result: Optional[Dict[str, Any]] = None, 

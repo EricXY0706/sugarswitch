@@ -52,6 +52,8 @@ def run_prefilters(
     analyzer = InteractionAnalyzer(structure_file=structure_file, chain_id=protein_chain_id)
     interaction_dict = analyzer.analyze()
     ppi_sites = analyzer.extract_ppi_sites(chain_id=protein_chain_id, result=interaction_dict)
+    intrachain_sites = analyzer.extract_intra_interaction_sites(chain_id=protein_chain_id, result=interaction_dict)
+    intrachain_sites = set([s for s in intrachain_sites if SS_TAG[ss[(protein_chain_id, s)]][1] != "loop"])
     hotspots_sites = analyzer.extract_sites_interacting_with_hotspots(chain_id=protein_chain_id, hotspots=ast.literal_eval(functional_hotspots), result=interaction_dict)
     
     # Filtering out the strong-coupling and conserved sites
@@ -94,9 +96,8 @@ def run_prefilters(
     )
     gvpbind_sites = set([site for site, score in gvpbind_score_by_res.items() if score > basic_configs["gvpbind_cutoff"] and site <= len(query_sequence)])
 
-    non_editable_regions = ppi_sites | hotspots_sites | conserverd_coupling_sites | low_sasa_sites | gvpbind_sites
+    non_editable_regions = ppi_sites | intrachain_sites | hotspots_sites | conserverd_coupling_sites | low_sasa_sites | gvpbind_sites
     editable_regions = set(list(range(1, len(query_sequence)+1))) - non_editable_regions
-    editable_regions = set([s for s in editable_regions if not (list(query_sequence)[s-1] == "P" and SS_TAG[ss[(protein_chain_id, s)]][0] == "turn")])
     
     # Modification pipeline
     results = []
