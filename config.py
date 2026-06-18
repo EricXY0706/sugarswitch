@@ -8,7 +8,6 @@ pipeline_configs = {
     "conservation_threshold": {"loop": 0.5, "ss": 0.5},
     "evc_coupling_threshold": 0.5,
     "sasa_cutoff": 0.5,
-    "gvpbind_cutoff": 0.783,
     "bond_length_C1_ND2": 1.43,
     "angle_C1_ND2_CG": 120.0,
     "angle_C2_C1_ND2": 109.5,
