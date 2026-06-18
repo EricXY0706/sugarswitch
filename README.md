@@ -133,6 +133,7 @@
 2. Chaudhury, Sidhartha, Sergey Lyskov, and Jeffrey J. Gray. "PyRosetta: a script-based interface for implementing molecular modeling algorithms using Rosetta." Bioinformatics 26.5 (2010): 689-691.
 3. Chen, Yinghui, et al. "An end-to-end framework for the prediction of protein structure and fitness from single sequence." Nature Communications 15.1 (2024): 7400.
 4. Su, Jin, et al. "Saprot: Protein language modeling with structure-aware vocabulary." BioRxiv (2023): 2023-10.
+5. Feng, Zhiyong, et al. "ESM-LoRA-Gly: Improved prediction of N-and O-linked glycosylation sites by tuning protein language models with low-rank adaptation (LoRA)." bioRxiv (2025): 2025-08.
 
 ## Licence & Citation
 **License**: MIT License - See LICENSE file for details  
