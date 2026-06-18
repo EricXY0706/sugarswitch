@@ -1855,13 +1855,7 @@ class ClashCheck:
 class BordaCount:
     def __init__(
         self,
-        conservation_weight: float = 1.0,
-        coupling_weight: float = 0.2,
         sasa_weight: float = 1.0,
-        sasa_next1_weight: float = 0.7,
-        sasa_next2_weight: float = 0.5,
-        sasa_around_weight: float = 1.0,
-        sasa_next_weight: float = 0.6,
         gvp_unbind_score_weight: float = 0.5,
         ddG_weight: float = 0.5,
         dTm_weight: float = 0.5,
@@ -1878,13 +1872,7 @@ class BordaCount:
         """
 
         self.weights = {
-            "ConservationScore": conservation_weight,
-            "CouplingScore": coupling_weight,
             "SASA_i": sasa_weight,
-            "SASA_i+1": sasa_next1_weight,
-            "SASA_i+2": sasa_next2_weight,
-            "SASA_(i-1:i+1)": sasa_around_weight,
-            "SASA_(i:i+2)": sasa_next_weight,
             "GVP_unbind_score": gvp_unbind_score_weight,
             "ddG": ddG_weight,
             "dTm": dTm_weight,
@@ -1897,13 +1885,7 @@ class BordaCount:
             "MutScore_NXT": mut_score_T_weight,
         }
         self.higher_is_better = {
-            "ConservationScore": False,
-            "CouplingScore": False,
             "SASA_i": True,
-            "SASA_i+1": True,
-            "SASA_i+2": True,
-            "SASA_(i-1:i+1)": True,
-            "SASA_(i:i+2)": True,
             "GVP_unbind_score": True,
             "ddG": True,
             "dTm": True,
@@ -1963,13 +1945,8 @@ class prefilter_report:
 
         df = pd.read_csv(self.df_file)
         higher_is_better = {
-            "ConservationScore": False,
-            "CouplingScore": False,
             "SASA_i": True,
-            "SASA_i+1": True,
-            "SASA_i+2": True,
-            "SASA_(i-1:i+1)": True,
-            "SASA_(i:i+2)": True,
+            "GVP_unbind_score": True,
             "ddG": True,
             "dTm": True,
             "ddG_NXS": True,
@@ -2051,12 +2028,17 @@ class prefilter_report:
 
         df = pd.read_csv(df_file)
         higher_is_better = {
-            "ConservationScore": False, "CouplingScore": False,
-            "SASA_i": True, "SASA_i+1": True, "SASA_i+2": True,
-            "SASA_(i-1:i+1)": True, "SASA_(i:i+2)": True,
-            "ddG": True, "dTm": True,
-            "ddG_NXS": True, "dTm_NXS": True, "ddG_NXT": True, "dTm_NXT": True,
-            "MutScore": True, "MutScore_NXS": True, "MutScore_NXT": True,
+            "SASA_i": True,
+            "GVP_unbind_score": True,
+            "ddG": True,
+            "dTm": True,
+            "ddG_NXS": True,
+            "dTm_NXS": True,
+            "ddG_NXT": True,
+            "dTm_NXT": True,
+            "MutScore": True,
+            "MutScore_NXS": True,
+            "MutScore_NXT": True,
         }
         for c, h in higher_is_better.items():
             if c in df.columns and not h:

@@ -48,7 +48,8 @@ def run_prefilters(
 
     ss = StructureLoader.get_secondary_structure(structure_file=structure_file, chain_id=protein_chain_id)
     
-    # Scanning all the inter- and intra- chain interactions (denote them as functional sites)
+    # ---------------------------------------------------- Filter ----------------------------------------------------
+    # 1. Interaction (intra- and inter- chain)
     analyzer = InteractionAnalyzer(structure_file=structure_file, chain_id=protein_chain_id)
     interaction_dict = analyzer.analyze()
     ppi_sites = analyzer.extract_ppi_sites(chain_id=protein_chain_id, result=interaction_dict)
@@ -56,8 +57,7 @@ def run_prefilters(
     intrachain_sites = set([s for s in intrachain_sites if SS_TAG[ss[(protein_chain_id, s)]][1] != "loop"])
     hotspots_sites = analyzer.extract_sites_interacting_with_hotspots(chain_id=protein_chain_id, hotspots=ast.literal_eval(functional_hotspots), result=interaction_dict)
     
-    # Filtering out the strong-coupling and conserved sites
-    skip_evc = False
+    # 2. Conservation and evolutionary coupling
     input_alignment_file = f"{output_dir}/msa/uniref_{aln_file_id}.a3m"
     if len(list(SeqIO.parse(input_alignment_file, "fasta"))) >= 10:
         evc = EVC_funcs(alignment_file=input_alignment_file, structure_file=structure_file, chain_id=protein_chain_id, out_dir=f"{output_dir}/evc/")
@@ -76,51 +76,38 @@ def run_prefilters(
             evc_threshold=basic_configs["evc_coupling_threshold"],
         )
     else:
-        skip_evc = True
         conserverd_coupling_sites = set()
 
-    # Filtering out the low SASA sites
+    # 3. Exclude: Sites with inter- and intra- chain interactions, and highly conserved and/or evo-coupled
+    non_editable_regions = ppi_sites | intrachain_sites | hotspots_sites | conserverd_coupling_sites
+    editable_regions = set(list(range(1, len(query_sequence)+1))) - non_editable_regions
+    
+    # ---------------------------------------------------- Ranker ----------------------------------------------------
+    results = []
+    saprot = SaProt_funcs()
+    spired = Spired_funcs()
     rosetta = Rosetta_funcs()
+    
     sasa_cutoff, low_sasa_sites, sasa_index_dict = rosetta.get_SASA(
         structure_file=structure_file,
         cutoff=basic_configs["sasa_cutoff"],
         chain=protein_chain_id,
     )
-    
-    # Filtering out the highly-potencial PPI interface sites
     gvpbind_score_by_res = gvpbind_predict(
         structure_file=structure_file,
         chain_id=protein_chain_id,
         out_dir=output_dir,
         filename=filename,
     )
-    gvpbind_sites = set([site for site, score in gvpbind_score_by_res.items() if score > basic_configs["gvpbind_cutoff"] and site <= len(query_sequence)])
-
-    non_editable_regions = ppi_sites | intrachain_sites | hotspots_sites | conserverd_coupling_sites | low_sasa_sites | gvpbind_sites
-    editable_regions = set(list(range(1, len(query_sequence)+1))) - non_editable_regions
     
-    # Modification pipeline
-    results = []
-    saprot = SaProt_funcs()
-    spired = Spired_funcs()
-    
+    os.makedirs(f"{output_dir}/glycans/", exist_ok=True)
     for s in tqdm(editable_regions, dynamic_ncols=True):
         
-        if not skip_evc:
-            conservation_score = conservation_df.loc[conservation_df["i"] == s, "conservation"].values[0]
-            coupling_score = round(coupling_stength[s-1], 3)
-        else:
-            conservation_score, coupling_score = 0., 0.
+        # 1. SASA
         sasa_value = round(sasa_index_dict[s], 3)
-        sasa_value_before1 = round(sasa_index_dict[s-1], 3) if s != 1 else sasa_value
-        sasa_value_next1 = round(sasa_index_dict[s+1], 3) if s != len(query_sequence) else sasa_value
-        sasa_value_next2 = round(sasa_index_dict[s+2], 3) if s != len(query_sequence) and s != (len(query_sequence) - 1) else sasa_value
-        sasa_around_mean = round((sasa_value_before1 + sasa_value + sasa_value_next1) / 3, 3)
-        sasa_next_mean = round((sasa_value + sasa_value_next1 + sasa_value_next2) / 3, 3)
+        # 2. PPI interface probability
         gvp_unbind_score = round(1 - gvpbind_score_by_res[s], 3)
-        os.makedirs(f"{output_dir}/glycans/", exist_ok=True)
-        glycoprotein_structure_file = f"{output_dir}/glycans/{filename}_{list(query_sequence)[s-1]}{s}N.pdb"
-
+        # 3. Mutation effects
         mut_score_s = saprot.mutation_score(
             query_seq=query_sequence,
             structure_file=structure_file,
@@ -159,6 +146,8 @@ def run_prefilters(
         else:
             ddG_next2_S, dTm_next2_S, ddG_next2_T, dTm_next2_T = ddG_s, dTm_s, ddG_s, dTm_s
         
+        # 4. Glycan grafting for reference only
+        glycoprotein_structure_file = f"{output_dir}/glycans/{filename}_{list(query_sequence)[s-1]}{s}N.pdb"
         rosetta.mutate(
             structure_file=structure_file,
             output_file=glycoprotein_structure_file,
@@ -189,16 +178,15 @@ def run_prefilters(
             structure_file=glycoprotein_structure_file,
         )
 
-        results.append([s, SS_TAG[ss_dict[(protein_chain_id, s)]][0], f"{list(query_sequence)[s-1]}{s}N", conservation_score, coupling_score, 
-                        sasa_value, sasa_value_next1, sasa_value_next2, sasa_around_mean, sasa_next_mean, gvp_unbind_score,
+        results.append([s, SS_TAG[ss_dict[(protein_chain_id, s)]][0], f"{list(query_sequence)[s-1]}{s}N", sasa_value, gvp_unbind_score,
                         ddG_s, dTm_s, ddG_next2_S, dTm_next2_S, ddG_next2_T, dTm_next2_T, 
                         mut_score_s, mut_score_s_next2_S, mut_score_s_next2_T, clash_residues])
 
     df = pd.DataFrame(results)
-    df.columns = ["Site", "SS", "Mutation", "ConservationScore", "CouplingScore",
-                  "SASA_i", "SASA_i+1", "SASA_i+2", "SASA_(i-1:i+1)", "SASA_(i:i+2)", "GVP_unbind_score",
+    df.columns = ["Site", "SS", "Mutation", "SASA_i", "GVP_unbind_score",
                   "ddG", "dTm", "ddG_NXS", "dTm_NXS", "ddG_NXT", "dTm_NXT", 
-                  "MutScore", "MutScore_NXS", "MutScore_NXT", "Clash"]
+                  "MutScore", "MutScore_NXS", "MutScore_NXT", "Clash"
+                  ]
     ranker = BordaCount(**ranker_configs)
     df = ranker.compute_score(df)
     df_file = f"{output_dir}/{filename}_single_points.csv"
@@ -217,8 +205,5 @@ def run_prefilters(
         df_file=df_file,
         output_html=f"{output_dir}/{filename}_prefilter_report.html",
     )
-    # shutil.rmtree(f"{output_dir}/msa{suffix}")
-    # reporter.plot_heatmap(
-    #     out_file=f"{output_dir}/{filename}_single_points_heatmap.pdf",
-    # )
     reporter.generate_prefilter_report()
+    # shutil.rmtree(f"{output_dir}/msa{suffix}")

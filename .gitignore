@@ -26,3 +26,4 @@ ESM-LoRA-Gly/checkpoints/N-linked/ESM-3B
 src/glycodesign_bb_hallucination.py
 nohup*
 *backup*
+src/*backup
