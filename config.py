@@ -20,13 +20,7 @@ pipeline_configs = {
 
 basic_configs = {**pipeline_configs}
 ranker_configs = {
-    "conservation_weight": 1.0,
-    "coupling_weight": 0.5,
     "sasa_weight": 1.0,
-    "sasa_next1_weight": 0.7,
-    "sasa_next2_weight": 0.5,
-    "sasa_around_weight": 1.0,
-    "sasa_next_weight": 0.6,
     "gvp_unbind_score_weight": 0.5,
     "ddG_weight": 0.3,
     "dTm_weight": 0.3,
