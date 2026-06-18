@@ -114,13 +114,7 @@
       # An example
 
       ranker_configs = {
-         "conservation_weight": 1.0, # Conservation level. The next 2 values are computed by EVCouplings.
-         "coupling_weight": 0.5, # Co-evolving strength.
          "sasa_weight": 1.0, # SASA of the current site. The next 5 values are computed by PyRosetta.
-         "sasa_next1_weight": 0.7, # SASA of the next site to the current site.
-         "sasa_next2_weight": 0.5, # SASA of the next 2nd site to the current site.
-         "sasa_around_weight": 1.0, # Mean SASA value of the triad sequon around the current site.
-         "sasa_next_weight": 0.6, # Mean SASA value of the triad sequon following the current site.
          "gvp_unbind_score_weight": 0.5, # Unbinding level. This is computed by GVP-Bind
          "ddG_weight": 0.3, # ΔΔG of the protein mutant (NXX) and WT. The next 6 values are computed by SPIRED.
          "dTm_weight": 0.3, # ΔTm of the protein mutant (NXX) and WT
