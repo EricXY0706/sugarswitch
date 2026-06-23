@@ -60,17 +60,14 @@ class SaProt_funcs:
         
     def mutation_score(
         self,
-        query_seq: str,
-        structure_file: str,
-        chain_id: str,
+        parsed_foldseek_seq: str,
         mutations: dict
     ) -> float:
         '''
         mutate_position: Position to be mutated, starting from 1.
         mutation: AA after mutation
-        
         '''
-        seq = self.parse_foldseek_ss(query_seq=query_seq, structure_file=structure_file, chain_id=chain_id)
-        mut_info = ":".join([f"{seq[2 * (s - 1)]}{s}{m}" for s, m in mutations.items()])
+        
+        mut_info = ":".join([f"{parsed_foldseek_seq[2 * (s - 1)]}{s}{m}" for s, m in mutations.items()])
 
-        return round(self.model.predict_mut(seq, mut_info), 3)
+        return round(self.model.predict_mut(parsed_foldseek_seq, mut_info), 3)
