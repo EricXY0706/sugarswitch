@@ -78,21 +78,28 @@ def run_prefilters(
     else:
         conserverd_coupling_sites = set()
 
-    # 3. Exclude: Sites with inter- and intra- chain interactions, and highly conserved and/or evo-coupled
-    non_editable_regions = ppi_sites | intrachain_sites | hotspots_sites | conserverd_coupling_sites
-    editable_regions = set(list(range(1, len(query_sequence)+1))) - non_editable_regions
-    
-    # ---------------------------------------------------- Ranker ----------------------------------------------------
-    results = []
-    saprot = SaProt_funcs()
-    spired = Spired_funcs()
+    # 3. Solvent accessible surface area
     rosetta = Rosetta_funcs()
-    
     sasa_cutoff, low_sasa_sites, sasa_index_dict = rosetta.get_SASA(
         structure_file=structure_file,
         cutoff=basic_configs["sasa_cutoff"],
         chain=protein_chain_id,
     )
+    
+    # 4. Exclude: Sites with inter- and intra- chain interactions, and highly conserved and/or evo-coupled
+    non_editable_regions = ppi_sites | intrachain_sites | hotspots_sites | conserverd_coupling_sites | low_sasa_sites
+    editable_regions = set(list(range(1, len(query_sequence)+1))) - non_editable_regions
+    
+    # ---------------------------------------------------- Ranker ----------------------------------------------------
+    results = []
+    spired = Spired_funcs()
+    saprot = SaProt_funcs()
+    parsed_foldseek_seq = saprot.parse_foldseek_ss(
+        query_seq=query_sequence,
+        structure_file=structure_file,
+        chain_id=protein_chain_id,
+    )
+    
     gvpbind_score_by_res = gvpbind_predict(
         structure_file=structure_file,
         chain_id=protein_chain_id,
@@ -109,22 +116,16 @@ def run_prefilters(
         gvp_unbind_score = round(1 - gvpbind_score_by_res[s], 3)
         # 3. Mutation effects
         mut_score_s = saprot.mutation_score(
-            query_seq=query_sequence,
-            structure_file=structure_file,
-            chain_id=protein_chain_id,
+            parsed_foldseek_seq=parsed_foldseek_seq,
             mutations={s: "N"},
         )
         if s != len(query_sequence) and s != (len(query_sequence) - 1):
             mut_score_s_next2_S = saprot.mutation_score(
-                query_seq=query_sequence,
-                structure_file=structure_file,
-                chain_id=protein_chain_id,
+                parsed_foldseek_seq=parsed_foldseek_seq,
                 mutations={s: "N", s+2: "S"},
             )
             mut_score_s_next2_T = saprot.mutation_score(
-                query_seq=query_sequence,
-                structure_file=structure_file,
-                chain_id=protein_chain_id,
+                parsed_foldseek_seq=parsed_foldseek_seq,
                 mutations={s: "N", s+2: "T"},
             )
         else:
@@ -178,7 +179,7 @@ def run_prefilters(
             structure_file=glycoprotein_structure_file,
         )
 
-        results.append([s, SS_TAG[ss_dict[(protein_chain_id, s)]][0], f"{list(query_sequence)[s-1]}{s}N", sasa_value, gvp_unbind_score,
+        results.append([s, SS_TAG[ss[(protein_chain_id, s)]][0], f"{list(query_sequence)[s-1]}{s}N", sasa_value, gvp_unbind_score,
                         ddG_s, dTm_s, ddG_next2_S, dTm_next2_S, ddG_next2_T, dTm_next2_T, 
                         mut_score_s, mut_score_s_next2_S, mut_score_s_next2_T, clash_residues])
 
@@ -189,7 +190,7 @@ def run_prefilters(
                   ]
     ranker = BordaCount(**ranker_configs)
     df = ranker.compute_score(df)
-    df_file = f"{output_dir}/{filename}_single_points.csv"
+    df_file = f"{output_dir}/{filename}_prefilter_result.csv"
     df.to_csv(df_file, index=False)
     pose = rosetta.get_pose(structure_file)
     StructureFileEditor.write_score_as_bfactor(
