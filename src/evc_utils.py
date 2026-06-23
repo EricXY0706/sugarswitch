@@ -83,31 +83,32 @@ class EVC_funcs:
         '''
         Run EVcouplings to generate pairwise coupling strength
         '''
-        result = run(
-            alignment_file=self.a2m_file,
-            frequencies_file=self.freq_file,
-            prefix=self.out_dir,
-            protocol=protocol,                 
-            scoring_model=scoring_model,
-            min_sequence_distance=min_sequence_distance,
-            theta=theta,
-            focus_mode=focus_mode,
-            focus_sequence=focus_sequence,
-            alphabet=self.aa_list,
-            segments=segment,
-            ignore_gaps=ignore_gaps,
-            iterations=iterations,
-            lambda_h=lambda_h,
-            lambda_J=lambda_J,
-            lambda_group=lambda_group,
-            lambda_J_times_Lq=lambda_J_times_Lq,
-            scale_clusters=scale_clusters,
-            cpu=cpu,
-            plmc=self.plmc,
-            reuse_ecs=reuse_ecs
-            )
-        
-        return f"{self.out_dir}/_ECs.txt"
+        if not os.path.exists(self.ec_file):
+            result = run(
+                alignment_file=self.a2m_file,
+                frequencies_file=self.freq_file,
+                prefix=self.out_dir,
+                protocol=protocol,                 
+                scoring_model=scoring_model,
+                min_sequence_distance=min_sequence_distance,
+                theta=theta,
+                focus_mode=focus_mode,
+                focus_sequence=focus_sequence,
+                alphabet=self.aa_list,
+                segments=segment,
+                ignore_gaps=ignore_gaps,
+                iterations=iterations,
+                lambda_h=lambda_h,
+                lambda_J=lambda_J,
+                lambda_group=lambda_group,
+                lambda_J_times_Lq=lambda_J_times_Lq,
+                scale_clusters=scale_clusters,
+                cpu=cpu,
+                plmc=self.plmc,
+                reuse_ecs=reuse_ecs
+                )
+        else:
+            pass
     
     def run_evc_filters(self,
                         secondary_structure: dict,
