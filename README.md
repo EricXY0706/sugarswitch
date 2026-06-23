@@ -32,12 +32,13 @@
       # An example
 
       python run_sugarswitch.py prefilter \
-         --input "input_fasta_file" \
+         --input_fasta_file "input_fasta_file" \
          --input_structure_file "optinal_input_structure_file" \
          --out_dir "output_dir" \
          --chain_id "CHAIN_ID" \
          --functional_hotspots "[1,2,3,'4-10']" \ # This has to be a string with quotation marks
-         --gpu_id 0
+         --gpu_ids (0,1,2,3) \ GPUs to parallelize
+         --enable_glycan_grafting True
       ```
       ⚠️ The input file in FASTA format should contain at least one sequence.
       ```txt
@@ -54,7 +55,7 @@
       # An example: Design 3 sequences with 5 N-glycosylation sites each
 
       python run_sugarswitch.py designer \
-         --input "input_fasta_file" \
+         --input_fasta_file "input_fasta_file" \
          --out_dir "output_dir" \
          --chain_id "CHAIN_ID" \
          --num_designs 3 \
@@ -70,16 +71,17 @@
       # An example
 
       python run_sugarswitch.py pipeline \
-         --input "input_fasta_file" \
+         --input_fasta_file "input_fasta_file" \
          --input_structure_file "optinal_input_structure_file" \
          --out_dir "output_dir" \
          --chain_id "CHAIN_ID" \
          --functional_hotspots "[1,2,3,'4-10']" \ # This has to be a string with quotation marks
+         --enable_glycan_grafting True
          --num_designs 3 \
          --num_gly_sites 5 \
          --num_steps 100 \ # Number of hallucination steps
          --add_pll_loss True \ # This makes the sequence more natural but significantly increases computational overhead
-         --gpu_id 0
+         --gpu_ids (0,1,2,3) \ GPUs to parallelize
       ```
 2. Optionally update the configrations for **Prefilter** in `config.py`
    
