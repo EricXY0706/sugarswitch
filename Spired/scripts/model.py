@@ -435,9 +435,6 @@ class SPIRED_Model(nn.Module):
         PredCadistavg = {}
         Plddt = {}
 
-        if f1d.device == torch.device("cpu"):
-            self.device0, self.device1, self.device2, self.device3 = (torch.device("cpu"), torch.device("cpu"), torch.device("cpu"), torch.device("cpu"))
-
         B, L, layers, c_s = f1d.shape
         maskdiag = torch.ones([L, L]) - torch.eye(L)
         f1d, maskdiag, true_aa = (f1d.to(self.device0), maskdiag.to(self.device0), true_aa.to(self.device0))
@@ -867,26 +864,27 @@ class Model(torch.nn.Module):
 
 
 class SPIRED_Stab(torch.nn.Module):
-    def __init__(self, device_list):
+    def __init__(self, device_list, stab_device=None):
         super().__init__()
         self.SPIRED = SPIRED_Model(depth=2, channel=128, device_list=device_list)
-        self.Stab = Model(node_dim=32, num_layer=3, n_head=8, pair_dim=64).to(device_list[-1])
+        self.stab_device = torch.device(stab_device or device_list[-1])
+        self.Stab = Model(node_dim=32, num_layer=3, n_head=8, pair_dim=64).to(self.stab_device)
 
     def forward(self, wt_data, mut_data, mut_pos_torch_list):
 
         # wt data
         wt_Predxyz, PredCadistavg, wt_Plddt, ca, cb, omega, theta, phi, wt_phi_psi_1D, seq_feats, pair_feats = self.SPIRED(wt_data["target_tokens"], wt_data["esm2-3B"], no_recycles=1)
         wt_features = {"Predxyz": wt_Predxyz, "Plddt": wt_Plddt, "phi_psi_1D": wt_phi_psi_1D}
-        wt_data["pair"] = wt_Predxyz["4th"][-1].permute(0, 2, 3, 1).contiguous()
-        wt_data["plddt"] = wt_Plddt["4th"][-1]
-        wt_data["embedding"] = wt_data["embedding"].to(wt_data["pair"].device)
+        wt_data["pair"] = wt_Predxyz["4th"][-1].permute(0, 2, 3, 1).contiguous().to(self.stab_device)
+        wt_data["plddt"] = wt_Plddt["4th"][-1].to(self.stab_device)
+        wt_data["embedding"] = wt_data["embedding"].to(self.stab_device)
 
         # mut data
         mut_Predxyz, PredCadistavg, mut_Plddt, ca, cb, omega, theta, phi, mut_phi_psi_1D, seq_feats, pair_feats = self.SPIRED(mut_data["target_tokens"], mut_data["esm2-3B"], no_recycles=1)
         mut_features = {"Predxyz": mut_Predxyz, "Plddt": mut_Plddt, "phi_psi_1D": mut_phi_psi_1D}
-        mut_data["pair"] = mut_Predxyz["4th"][-1].permute(0, 2, 3, 1).contiguous()
-        mut_data["plddt"] = mut_Plddt["4th"][-1]
-        mut_data["embedding"] = mut_data["embedding"].to(mut_data["pair"].device)
+        mut_data["pair"] = mut_Predxyz["4th"][-1].permute(0, 2, 3, 1).contiguous().to(self.stab_device)
+        mut_data["plddt"] = mut_Plddt["4th"][-1].to(self.stab_device)
+        mut_data["embedding"] = mut_data["embedding"].to(self.stab_device)
 
-        ddG, dTm = self.Stab(wt_data, mut_data, mut_pos_torch_list)
+        ddG, dTm = self.Stab(wt_data, mut_data, mut_pos_torch_list.to(self.stab_device))
         return ddG, dTm, wt_features, mut_features
