@@ -37,7 +37,6 @@
          --out_dir "output_dir" \
          --chain_id "CHAIN_ID" \
          --functional_hotspots "[1,2,3,'4-10']" \ # This has to be a string with quotation marks
-         --gpu_ids (0,1,2,3) \ GPUs to parallelize
          --enable_glycan_grafting True
       ```
       ⚠️ The input file in FASTA format should contain at least one sequence.
@@ -81,7 +80,6 @@
          --num_gly_sites 5 \
          --num_steps 100 \ # Number of hallucination steps
          --add_pll_loss True \ # This makes the sequence more natural but significantly increases computational overhead
-         --gpu_ids (0,1,2,3) \ GPUs to parallelize
       ```
 2. Optionally update the configrations for **Prefilter** in `config.py`
    
@@ -98,9 +96,9 @@
          "evc_lambda_h": 0.01,
          "evc_lambda_J": 0.01,
          "evc_num_cpu": 10,
-         "conservation_threshold": {"loop": 0.5, "ss": 0.5}, # The residues on loop region/other secondary structures with conservation value above the given threshold will be discarded from the prefilter. The higher the thresholds, the less strict the filtering.
+         "conservation_threshold": 0.8, # The residues with conservation value above the given threshold will be discarded from the prefilter. The higher the thresholds, the less strict the filtering.
          "evc_coupling_threshold": 0.5, # The residues with co-evolving strength above the given threshold will be discarded from the prefilter. The higher the threshold, the less strict the filtering.
-         "sasa_cutoff": 0.5, # The residues with SASA values falling in the last n% will be discarded from the prefilter. The higher the threshold, the more strict the filtering.
+         "rsasa_threshold": 0.5, # The residues with rSASA values below the given threshold will be discarded from the prefilter. The higher the threshold, the more strict the filtering.
          "bond_length_C1_ND2": 1.43,
          "angle_C1_ND2_CG": 120.0,
          "angle_C2_C1_ND2": 109.5,
@@ -116,17 +114,13 @@
       # An example
 
       ranker_configs = {
-         "sasa_weight": 1.0, # SASA of the current site. The next 5 values are computed by PyRosetta.
-         "gvp_unbind_score_weight": 0.5, # Unbinding level. This is computed by GVP-Bind
-         "ddG_weight": 0.3, # ΔΔG of the protein mutant (NXX) and WT. The next 6 values are computed by SPIRED.
+         "rSASA_weight": 1.0, # rSASA of the current site.
+         "ddG_weight": 0.3, # ΔΔG of the protein mutant (NXX) and WT.
          "dTm_weight": 0.3, # ΔTm of the protein mutant (NXX) and WT
-         "ddG_S_weight": 0.2, # ΔΔG of the protein mutant (NXS) and WT
-         "dTm_S_weight": 0.2, # ΔTm of the protein mutant (NXS) and WT
-         "ddG_T_weight": 0.2, # ΔΔG of the protein mutant (NXT) and WT
-         "dTm_T_weight": 0.2, # ΔTm of the protein mutant (NXT) and WT
-         "mut_score_weight": 0.3, # Mutation score of the protein mutant (NXX). The next 3 values are computed by SaProt.
-         "mut_score_S_weight": 0.2, # Mutation score of the protein mutant (NXS).
-         "mut_score_T_weight": 0.2, # Mutation score of the protein mutant (NXT).
+         "ddG_NXST_weight": 0.2, # ΔΔG of the protein mutant (NXS/T) and WT
+         "dTm_NXST_weight": 0.2, # ΔTm of the protein mutant (NXS) and WT
+         "MutScore_weight": 0.3, # Mutation score of the protein mutant (NXX).
+         "MutScore_NXST_weight": 0.2, # Mutation score of the protein mutant (NXS/T).
       }
       ```
 
