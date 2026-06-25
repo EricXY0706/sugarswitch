@@ -42,12 +42,6 @@ SS_TAG = {
     "E": ["strand", "sheet"],
     }
 
-AA_INTERACTIONS = {
-    "H_bond": ["R", "K", "D", "E", "S", "T", "N", "Q", "Y"],
-    "Hydrophobic": ["A", "V", "I", "L", "M", "F", "W", "Y"],
-
-}
-
 ONE_TO_THREE = {
     "A": "ALA",
     "R": "ARG",
@@ -92,6 +86,29 @@ THREE_TO_ONE = {
     "TRP": "W",
     "TYR": "Y",
     "VAL": "V",
+}
+
+FULL_EXPOSURE_SASA = {
+    "A": 104.47, 
+    "R": 249.58, 
+    "N": 156.42, 
+    "D": 142.21, 
+    "C": 138.85, 
+    "Q": 197.2, 
+    "E": 177.3, 
+    "G": 86.39, 
+    "H": 189.59, 
+    "I": 181.42, 
+    "L": 189.64, 
+    "K": 220.47, 
+    "M": 211.58, 
+    "F": 202.2, 
+    "P": 157.76, 
+    "S": 122.27, 
+    "T": 149.42, 
+    "W": 247.63, 
+    "Y": 226.83, 
+    "V": 160.76,
 }
 
 CHAIN_IDS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -160,7 +177,7 @@ class StructureLoader:
         chain_seq_dict = {}
         for model in structure:
             for chain in model:
-                seq = "".join([residue.resname for residue in chain])
+                seq = "".join([THREE_TO_ONE[residue.resname] for residue in chain])
                 chain_seq_dict[chain.id] = seq
         
         return chain_seq_dict
@@ -1855,47 +1872,35 @@ class ClashCheck:
 class BordaCount:
     def __init__(
         self,
-        sasa_weight: float = 1.0,
-        gvp_unbind_score_weight: float = 0.5,
+        rSASA_weight: float = 1.0,
         ddG_weight: float = 0.5,
         dTm_weight: float = 0.5,
-        ddG_S_weight: float = 0.3,
-        dTm_S_weight: float = 0.3,
-        ddG_T_weight: float = 0.3,
-        dTm_T_weight: float = 0.3,
-        mut_score_weight: float = 0.3,
-        mut_score_S_weight: float = 0.2,
-        mut_score_T_weight: float = 0.2,
+        ddG_NXST_weight: float = 0.3,
+        dTm_NXST_weight: float = 0.3,
+        MutScore_weight: float = 0.3,
+        MutScore_NXST_weight: float = 0.2,
     ) -> None:
         """
         Initialize the BordaCount class with weights for different features.
         """
 
         self.weights = {
-            "SASA_i": sasa_weight,
-            "GVP_unbind_score": gvp_unbind_score_weight,
+            "rSASA": rSASA_weight,
             "ddG": ddG_weight,
             "dTm": dTm_weight,
-            "ddG_NXS": ddG_S_weight,
-            "dTm_NXS": dTm_S_weight,
-            "ddG_NXT": ddG_T_weight,
-            "dTm_NXT": dTm_T_weight,
-            "MutScore": mut_score_weight,
-            "MutScore_NXS": mut_score_S_weight,
-            "MutScore_NXT": mut_score_T_weight,
+            "ddG_NXST": ddG_NXST_weight,
+            "dTm_NXST": dTm_NXST_weight,
+            "MutScore": MutScore_weight,
+            "MutScore_NXST": MutScore_NXST_weight,
         }
         self.higher_is_better = {
-            "SASA_i": True,
-            "GVP_unbind_score": True,
+            "rSASA": True,
             "ddG": True,
             "dTm": True,
-            "ddG_NXS": True,
-            "dTm_NXS": True,
-            "ddG_NXT": True,
-            "dTm_NXT": True,
+            "ddG_NXST": True,
+            "dTm_NXST": True,
             "MutScore": True,
-            "MutScore_NXS": True,
-            "MutScore_NXT": True,
+            "MutScore_NXST": True,
         }
 
     def compute_score(self, dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -1945,17 +1950,13 @@ class prefilter_report:
 
         df = pd.read_csv(self.df_file)
         higher_is_better = {
-            "SASA_i": True,
-            "GVP_unbind_score": True,
+            "rSASA": True,
             "ddG": True,
             "dTm": True,
-            "ddG_NXS": True,
-            "dTm_NXS": True,
-            "ddG_NXT": True,
-            "dTm_NXT": True,
+            "ddG_NXST": True,
+            "dTm_NXST": True,
             "MutScore": True,
-            "MutScore_NXS": True,
-            "MutScore_NXT": True,
+            "MutScore_NXST": True,
         }
         for c, h in higher_is_better.items():
             if c in df.columns and not h:
@@ -2028,17 +2029,13 @@ class prefilter_report:
 
         df = pd.read_csv(df_file)
         higher_is_better = {
-            "SASA_i": True,
-            "GVP_unbind_score": True,
+            "rSASA": True,
             "ddG": True,
             "dTm": True,
-            "ddG_NXS": True,
-            "dTm_NXS": True,
-            "ddG_NXT": True,
-            "dTm_NXT": True,
+            "ddG_NXST": True,
+            "dTm_NXST": True,
             "MutScore": True,
-            "MutScore_NXS": True,
-            "MutScore_NXT": True,
+            "MutScore_NXST": True,
         }
         for c, h in higher_is_better.items():
             if c in df.columns and not h:
