@@ -14,11 +14,13 @@ from src.util import InteractionAnalyzer, SS_TAG, AA_INTERACTIONS
 
 class EVC_funcs:
 
-    def __init__(self, 
-                 alignment_file: str,
-                 structure_file: str,
-                 chain_id: str,
-                 out_dir: str) -> None:
+    def __init__(
+        self, 
+        alignment_file: str,
+        structure_file: str,
+        chain_id: str,
+        out_dir: str
+    ) -> None:
         
         self.aa_list = "-ACDEFGHIKLMNPQRSTVWYX"
         self.chain = chain_id
@@ -36,8 +38,10 @@ class EVC_funcs:
         self.freq_file = self.describe_freq()
         self.ec_file = f"{self.out_dir}/_ECs.txt"
 
-    def a3m_to_a2m(self, 
-                   gap_threshold: float = 0.25) -> Alignment:
+    def a3m_to_a2m(
+        self, 
+        gap_threshold: float = 0.25
+    ) -> Alignment:
         '''
         Convert a3m file to a2m file with equal length
         '''
@@ -62,24 +66,25 @@ class EVC_funcs:
 
         return f"{self.out_dir}/evc_aa_freq.csv"
 
-    def run_evc(self,
-                protocol: str = "standard",
-                scoring_model: str = "skewnormal",
-                min_sequence_distance: int = 6,
-                theta: float = 0.8,
-                focus_mode: bool = True,
-                focus_sequence: str = "101",
-                segment: Segment = None,
-                ignore_gaps: bool = True,
-                iterations: int = 100,
-                lambda_h: float = 0.01,
-                lambda_J: float = 0.01,
-                lambda_group: float = None,
-                lambda_J_times_Lq: bool = True,
-                scale_clusters: float = None,
-                cpu: int = 10,
-                reuse_ecs: bool = True
-                ) -> Path:
+    def run_evc(
+        self,
+        protocol: str = "standard",
+        scoring_model: str = "skewnormal",
+        min_sequence_distance: int = 6,
+        theta: float = 0.8,
+        focus_mode: bool = True,
+        focus_sequence: str = "101",
+        segment: Segment = None,
+        ignore_gaps: bool = True,
+        iterations: int = 100,
+        lambda_h: float = 0.01,
+        lambda_J: float = 0.01,
+        lambda_group: float = None,
+        lambda_J_times_Lq: bool = True,
+        scale_clusters: float = None,
+        cpu: int = 10,
+        reuse_ecs: bool = True
+    ) -> Path:
         '''
         Run EVcouplings to generate pairwise coupling strength
         '''
@@ -110,11 +115,13 @@ class EVC_funcs:
         else:
             pass
     
-    def run_evc_filters(self,
-                        secondary_structure: dict,
-                        conservation_thresholds: dict,
-                        evc_threshold: float = 0.5,
-                        pic_format: str = "pdf"):
+    def run_evc_filters(
+        self,
+        secondary_structure: dict,
+        conservation_threshold: float = 0.8,
+        evc_threshold: float = 0.5,
+        pic_format: str = "pdf"
+    ):
         '''
         Run filters
         '''
@@ -135,11 +142,10 @@ class EVC_funcs:
 
         # conservation
         conserve_df = pd.read_csv(self.freq_file)
-        conservation_threshold = np.array([conservation_thresholds["loop"] if ss in ("-", "S", "T", "B") else conservation_thresholds["ss"] for ss in secondary_structure.values()])
-        conserved_sites = conserve_df.loc[conserve_df['conservation'].values >= conservation_threshold, 'i'].tolist()
+        conserved_sites = conserve_df.loc[conserve_df.to_numpy()[np.arange(len(conserve_df)), conserve_df.columns.get_indexer(conserve_df["A_i"])] > conservation_threshold, 'i'].tolist()
 
         # coupling
-        coupling = (np.abs(coupling_strength) >= evc_threshold).astype(int)
+        coupling = (coupling_strength >= evc_threshold).astype(int)
         coupling_sites = (np.flatnonzero(np.sum(coupling, axis=1) != 0) + 1).tolist()
         strong_coupling_sites = set()
 
@@ -159,8 +165,8 @@ class EVC_funcs:
                 for c in coupling_sites_s & s_interactions:
                     for interaction_type, interaction_aa in AA_INTERACTIONS.items():
                         if self.query_seq[s-1] in interaction_aa and self.query_seq[c-1] in interaction_aa:
-                            if ((SS_TAG[secondary_structure[(self.chain, s)]][-1], SS_TAG[secondary_structure[(self.chain, c)]][-1]) not in [("helix", "helix"), ("sheet", "sheet")]) or abs(coupling_strength[s-1][c-1]) >= 0.8:
+                            if ((SS_TAG[secondary_structure[(self.chain, s)]][-1], SS_TAG[secondary_structure[(self.chain, c)]][-1]) not in [("helix", "helix"), ("sheet", "sheet")]) or coupling_strength[s-1][c-1] >= 0.8:
                                 remove_s = False
             if not remove_s:
                 strong_coupling_sites.add(s)
-        return set(conserved_sites) | set(strong_coupling_sites), conserve_df, np.mean(np.abs(coupling_strength), axis=1)
+        return set(conserved_sites) | set(strong_coupling_sites), conserve_df, np.mean(coupling_strength, axis=1)
