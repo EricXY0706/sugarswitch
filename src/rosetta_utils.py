@@ -4,7 +4,7 @@ from pyrosetta import init, Pose
 import pyrosetta.rosetta.core.import_pose as ip
 from pyrosetta.toolbox.mutants import mutate_residue
 
-from src.util import StructureLoader, StructureFileEditor, InteractionAnalyzer
+from src.util import StructureLoader, StructureFileEditor, InteractionAnalyzer, FULL_EXPOSURE_SASA
 from Bio.PDB import PDBIO
 from io import StringIO
 from itertools import product
@@ -44,51 +44,37 @@ class Rosetta_funcs:
     def get_SASA(
         self, 
         structure_file: str, 
-        cutoff: float = 0.5,
+        sasa_threshold: float = 0.5,
         chain: str = "A",
     ):
         '''
         Get the SASA values of each residue in the structure.
         
         structure_file: Path to the structure file.
-        cutoff: SASA cutoff value.
+        sasa_threshold: relative SASA exposure threshold.
         chain: Chain ID to be calculated.
         '''
-        sasa_calc = SasaCalc()
-        
-        # Get pose
+        sasa_calc = SasaCalc() 
         pose = self.get_pose(structure_file)
-        
-        # SASA calculation
+        seq = list(StructureLoader.get_sequences(structure_file)[chain])
         sasa_calc.calculate(pose)
         residue_sasa_list = sasa_calc.get_residue_sasa()
         
-        # Store the info in sasa_result: [chain_id, res_id, res_name, sasa_value] style
-        sasa_result, sasa_values = [], []
-        low_sasa_regions = set()
+        sasa_result = []
         sasa_index_dict = {}
         for i, sasa in enumerate(residue_sasa_list):
             chain_id = pose.chain(i+1)
             res_id = pose.pdb_info().number(i+1)
-            sasa_result.append([chain_id, res_id, sasa])
-            sasa_values.append(sasa)
             if chain_id == (self.chains.index(chain) + 1):
-                sasa_index_dict[res_id] = sasa
+                rsasa = sasa / FULL_EXPOSURE_SASA[seq[i]]
+                sasa_index_dict[res_id] = rsasa
+                sasa_result.append([chain_id, res_id, rsasa])
         
-        # Retrieve the SASA threshold
-        sasa_values.sort(reverse=False)
-        sasa_cutoff = sasa_values[round(len(sasa_values) * cutoff)]
-        
-        # Filter the high SASA regions out
-        
-        filtered_sasa_regions = [item for item in sasa_result if item[-1] <= sasa_cutoff and item[0] == (self.chains.index(chain) + 1)]
-        for item in filtered_sasa_regions:
-            low_sasa_regions.add(item[1])
+        low_sasa_regions = set([s for s, v in sasa_index_dict.items() if v < sasa_threshold])
             
-        # Save to file
         StructureFileEditor.write_bfactor(pose, sasa_result, structure_file)
 
-        return sasa_cutoff, low_sasa_regions, sasa_index_dict
+        return low_sasa_regions, sasa_index_dict
 
     def mutate(
         self,
