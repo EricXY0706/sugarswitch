@@ -7,7 +7,7 @@ pipeline_configs = {
     "evc_num_cpu": 10,
     "conservation_threshold": 0.8,
     "evc_coupling_threshold": 0.5,
-    "rsasa_threshold": 0.5,
+    "rsasa_threshold": 0.3,
     "bond_length_C1_ND2": 1.43,
     "angle_C1_ND2_CG": 120.0,
     "angle_C2_C1_ND2": 109.5,

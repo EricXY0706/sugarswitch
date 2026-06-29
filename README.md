@@ -98,7 +98,7 @@
          "evc_num_cpu": 10,
          "conservation_threshold": 0.8, # The residues with conservation value above the given threshold will be discarded from the prefilter. The higher the thresholds, the less strict the filtering.
          "evc_coupling_threshold": 0.5, # The residues with co-evolving strength above the given threshold will be discarded from the prefilter. The higher the threshold, the less strict the filtering.
-         "rsasa_threshold": 0.5, # The residues with rSASA values below the given threshold will be discarded from the prefilter. The higher the threshold, the more strict the filtering.
+         "rsasa_threshold": 0.3, # The residues with rSASA values below the given threshold will be discarded from the prefilter. The higher the threshold, the more strict the filtering.
          "bond_length_C1_ND2": 1.43,
          "angle_C1_ND2_CG": 120.0,
          "angle_C2_C1_ND2": 109.5,
