@@ -1012,7 +1012,7 @@ class InteractionAnalyzer:
         hydrogen_bond_ha_max: float = 2.6
         hydrogen_bond_dha_min_angle: float = 120.0
         heavy_atom_hbond_angle_min: float = 90.0
-        salt_bridge_max: float = 4.0
+        salt_bridge_max: float = 3.7
         hydrophobic_max: float = 4.5
         disulfide_bond_max: float = 2.2
         sequence_separation: int = 1
@@ -1327,6 +1327,7 @@ class InteractionAnalyzer:
     def save_csv(self, output_file: str | Path, result: Optional[Dict[str, Any]] = None) -> None:
         """Analyze and save {Residue_id: list of interactions} as a flat CSV table."""
         result = result or self.analyze()
+
         fieldnames = [
             "residue_id",
             "interaction_type",
@@ -1345,42 +1346,61 @@ class InteractionAnalyzer:
             "hydrophobic_neighbor_count",
         ]
 
+        merged_rows = {}
+
+        for residue_id, interactions in result.items():
+            for interaction in interactions:
+                if "residue" in interaction:
+                    partner = ""
+                    residue_a = interaction["residue"]
+                    residue_b = ""
+                else:
+                    partner = (
+                        interaction["residue_b"]
+                        if interaction["residue_a"] == residue_id
+                        else interaction["residue_a"]
+                    )
+                    residue_a = interaction["residue_a"]
+                    residue_b = interaction["residue_b"]
+
+                row = {
+                    "residue_id": residue_id,
+                    "interaction_type": interaction["type"],
+                    "partner_residue": partner,
+                    "residue_a": residue_a,
+                    "residue_b": residue_b,
+                    "atom_a": interaction.get("atom_a", ""),
+                    "atom_b": interaction.get("atom_b", ""),
+                    "distance": interaction.get("distance", ""),
+                    "donor": interaction.get("donor", ""),
+                    "acceptor": interaction.get("acceptor", ""),
+                    "angle": interaction.get("angle", ""),
+                    "angle_type": interaction.get("angle_type", ""),
+                    "sequence_neighbors": ";".join(interaction.get("sequence_neighbors", [])),
+                    "spatial_neighbors": ";".join(interaction.get("spatial_neighbors", [])),
+                    "hydrophobic_neighbor_count": interaction.get("hydrophobic_neighbor_count", ""),
+                }
+
+                merge_key = (
+                    row["residue_a"],
+                    row["residue_b"],
+                    row["atom_a"],
+                    row["atom_b"],
+                )
+
+                if merge_key not in merged_rows:
+                    merged_rows[merge_key] = row
+                else:
+                    old_types = merged_rows[merge_key]["interaction_type"].split("/")
+                    new_type = row["interaction_type"]
+
+                    if new_type not in old_types:
+                        merged_rows[merge_key]["interaction_type"] += f"/{new_type}"
+
         with Path(output_file).open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=fieldnames)
             writer.writeheader()
-            for residue_id, interactions in result.items():
-                for interaction in interactions:
-                    if "residue" in interaction:
-                        partner = ""
-                        residue_a = interaction["residue"]
-                        residue_b = ""
-                    else:
-                        partner = (
-                            interaction["residue_b"]
-                            if interaction["residue_a"] == residue_id
-                            else interaction["residue_a"]
-                        )
-                        residue_a = interaction["residue_a"]
-                        residue_b = interaction["residue_b"]
-                    writer.writerow(
-                        {
-                            "residue_id": residue_id,
-                            "interaction_type": interaction["type"],
-                            "partner_residue": partner,
-                            "residue_a": residue_a,
-                            "residue_b": residue_b,
-                            "atom_a": interaction.get("atom_a", ""),
-                            "atom_b": interaction.get("atom_b", ""),
-                            "distance": interaction.get("distance", ""),
-                            "donor": interaction.get("donor", ""),
-                            "acceptor": interaction.get("acceptor", ""),
-                            "angle": interaction.get("angle", ""),
-                            "angle_type": interaction.get("angle_type", ""),
-                            "sequence_neighbors": ";".join(interaction.get("sequence_neighbors", [])),
-                            "spatial_neighbors": ";".join(interaction.get("spatial_neighbors", [])),
-                            "hydrophobic_neighbor_count": interaction.get("hydrophobic_neighbor_count", ""),
-                        }
-                    )
+            writer.writerows(merged_rows.values())
 
     def _load_structure(self):
         if self.structure_file.suffix.lower() in {".cif", ".mmcif"}:
