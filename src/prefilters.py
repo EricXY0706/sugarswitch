@@ -54,7 +54,6 @@ def run_prefilters(
     interaction_dict = analyzer.analyze()
     ppi_sites = analyzer.extract_ppi_sites(chain_id=protein_chain_id, result=interaction_dict)
     intrachain_sites = analyzer.extract_intra_interaction_sites(chain_id=protein_chain_id, result=interaction_dict)
-    intrachain_sites = set([s for s in intrachain_sites if SS_TAG[ss[(protein_chain_id, s)]][1] != "loop"])
     hotspots_sites = analyzer.extract_sites_interacting_with_hotspots(chain_id=protein_chain_id, hotspots=ast.literal_eval(functional_hotspots), result=interaction_dict)
     
     # 2. Conservation and evolutionary coupling

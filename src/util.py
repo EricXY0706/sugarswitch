@@ -1291,6 +1291,9 @@ class InteractionAnalyzer:
             chain, resseq, _resname = residue_id.split(":")
             if chain != chain_id:
                 continue
+            
+            if len(interactions) == 1 and "salt_bridge" not in interactions[0]["type"]:
+                continue
 
             for interaction in interactions:
                 if "residue" in interaction:
@@ -1324,8 +1327,17 @@ class InteractionAnalyzer:
         with Path(output_file).open("w", encoding="utf-8") as handle:
             json.dump(result, handle, ensure_ascii=False, indent=2)
 
-    def save_csv(self, output_file: str | Path, result: Optional[Dict[str, Any]] = None) -> None:
-        """Analyze and save {Residue_id: list of interactions} as a flat CSV table."""
+    def save_csv(
+        self,
+        output_file: str | Path,
+        result: Optional[Dict[str, Any]] = None,
+        chain_id: str = "A",
+) -> None:
+        """Analyze and save {Residue_id: list of interactions} as a flat CSV table.
+
+        Put residue containing `chain_id` into residue_id/residue_a,
+        and the other residue into partner_residue/residue_b.
+        """
         result = result or self.analyze()
 
         fieldnames = [
@@ -1348,20 +1360,42 @@ class InteractionAnalyzer:
 
         merged_rows = {}
 
-        for residue_id, interactions in result.items():
+        chain_tag = f"{chain_id}:"
+
+        for original_residue_id, interactions in result.items():
             for interaction in interactions:
+                atom_a = interaction.get("atom_a", "")
+                atom_b = interaction.get("atom_b", "")
+
                 if "residue" in interaction:
+                    residue = interaction["residue"]
+
+                    residue_id = residue
                     partner = ""
-                    residue_a = interaction["residue"]
+                    residue_a = residue
                     residue_b = ""
+
                 else:
-                    partner = (
-                        interaction["residue_b"]
-                        if interaction["residue_a"] == residue_id
-                        else interaction["residue_a"]
-                    )
-                    residue_a = interaction["residue_a"]
-                    residue_b = interaction["residue_b"]
+                    r1 = interaction["residue_a"]
+                    r2 = interaction["residue_b"]
+
+                    if chain_tag in r1:
+                        residue_id = r1
+                        partner = r2
+                        residue_a = r1
+                        residue_b = r2
+                    elif chain_tag in r2:
+                        residue_id = r2
+                        partner = r1
+                        residue_a = r2
+                        residue_b = r1
+
+                        atom_a, atom_b = atom_b, atom_a
+                    else:
+                        residue_id = original_residue_id
+                        partner = r2 if r1 == original_residue_id else r1
+                        residue_a = r1
+                        residue_b = r2
 
                 row = {
                     "residue_id": residue_id,
@@ -1369,8 +1403,8 @@ class InteractionAnalyzer:
                     "partner_residue": partner,
                     "residue_a": residue_a,
                     "residue_b": residue_b,
-                    "atom_a": interaction.get("atom_a", ""),
-                    "atom_b": interaction.get("atom_b", ""),
+                    "atom_a": atom_a,
+                    "atom_b": atom_b,
                     "distance": interaction.get("distance", ""),
                     "donor": interaction.get("donor", ""),
                     "acceptor": interaction.get("acceptor", ""),
