@@ -1257,7 +1257,15 @@ class InteractionAnalyzer:
         """Extract all the intrachain interaction sites on the given chain"""
         result = result or self.analyze()
         intrachain_sites = set()
-        for interactions in result.values():
+        
+        for residue_id, interactions in result.items():
+            chain, resseq, _resname = residue_id.split(":")
+            if chain != chain_id:
+                continue
+            
+            if len(interactions) == 1 and "salt_bridge" not in interactions[0]["type"]:
+                continue
+            
             for interaction in interactions:
                 
                 if "residue_a" not in interaction or "residue_b" not in interaction:
@@ -1290,9 +1298,6 @@ class InteractionAnalyzer:
         for residue_id, interactions in result.items():
             chain, resseq, _resname = residue_id.split(":")
             if chain != chain_id:
-                continue
-            
-            if len(interactions) == 1 and "salt_bridge" not in interactions[0]["type"]:
                 continue
 
             for interaction in interactions:
