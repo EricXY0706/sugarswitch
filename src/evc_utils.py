@@ -10,7 +10,7 @@ from evcouplings.couplings.mapping import Segment
 from evcouplings.align.protocol import describe_frequencies
 from evcouplings.couplings.protocol import run
 
-from src.util import InteractionAnalyzer, SS_TAG, AA_INTERACTIONS
+# from src.util import InteractionAnalyzer, SS_TAG, AA_INTERACTIONS
 
 class EVC_funcs:
 
@@ -147,26 +147,5 @@ class EVC_funcs:
         # coupling
         coupling = (coupling_strength >= evc_threshold).astype(int)
         coupling_sites = (np.flatnonzero(np.sum(coupling, axis=1) != 0) + 1).tolist()
-        strong_coupling_sites = set()
 
-        for s in coupling_sites:
-            remove_s = True
-            coupling_sites_s = set((np.flatnonzero(coupling[s-1] != 0) + 1).tolist())
-            analyzer = InteractionAnalyzer(
-                structure_file=self.struct_file,
-                chain_id=self.chain,
-            )
-            s_interactions = analyzer.extract_sites_interacting_with_hotspots(
-                chain_id=self.chain,
-                hotspots=[s],
-                hotspots_included=False,
-            )
-            if coupling_sites_s & s_interactions:
-                for c in coupling_sites_s & s_interactions:
-                    for interaction_type, interaction_aa in AA_INTERACTIONS.items():
-                        if self.query_seq[s-1] in interaction_aa and self.query_seq[c-1] in interaction_aa:
-                            if ((SS_TAG[secondary_structure[(self.chain, s)]][-1], SS_TAG[secondary_structure[(self.chain, c)]][-1]) not in [("helix", "helix"), ("sheet", "sheet")]) or coupling_strength[s-1][c-1] >= 0.8:
-                                remove_s = False
-            if not remove_s:
-                strong_coupling_sites.add(s)
-        return set(conserved_sites) | set(strong_coupling_sites), conserve_df, np.mean(coupling_strength, axis=1)
+        return set(conserved_sites) | set(coupling_sites), conserve_df, np.mean(coupling_strength, axis=1)
