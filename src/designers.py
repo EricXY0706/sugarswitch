@@ -1,4 +1,3 @@
-import random
 import time
 import re
 import warnings
@@ -12,12 +11,14 @@ from transformers import EsmTokenizer, EsmForMaskedLM
 from peft import PeftModel
 import gc
 
-from config import basic_configs
-from src.design_utils import set_seed, sample_sites, GLY_MOTIFS
+from src.design_utils import set_seed, sample_sites, add_single_mutation
 from src.esm_model import EsmModelClassification, ESM_TOKENS
 from src.util import *
 
 eps = -1e9
+BASE_MODEL_NAME = "facebook/esm2_t30_150M_UR50D"
+LORA_MODEL_NAME = "./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint"
+HUMAN_LORA_MODEL_NAME = "./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint-human"
 
 def _sample_gumbel(shape, device, eps=1e-9):
     u = torch.rand(shape, device=device)
@@ -27,14 +28,19 @@ def prepare_seq(
     input_fasta_file: str,
     wt_structure_file: str,
     output_dir: str,
+    structure_unfav_sites: set,
+    sequence_unfav_sites: set,
+    low_rsasa_sites: set,
+    fav_sites: set,
     name: str = None,
     chain_id: str = "A",
-    num_gly_sites: int = 5,
+    num_gly_sites: int = 3,
+    trial_times: int = 0,
 ):
     filename = name if name else Path(input_fasta_file).name.split(".")[0]
     sampled_sites = sample_sites(
         structure_file=wt_structure_file,
-        scoring_df=f"{output_dir}/{filename}_single_points.csv",
+        scoring_df=f"{output_dir}/{filename}_prefilter_result.csv",
         chain_id=chain_id,
         num_sites_per_comb=num_gly_sites,
     )
@@ -52,49 +58,73 @@ def prepare_seq(
             sampled_sites = sorted(sampled_sites, reverse=True)
             seq = str(rec.seq)
             wt_seq += seq
+            seq_to_design += seq
             for s in sampled_sites:
-                if s <= 5:
-                    seq = [seq[:5], seq[5:]]
-                    seq[0] = random.sample(GLY_MOTIFS, 1)[0]
-                else:
-                    seq = [seq[:s-1-2], seq[s-1-2:s-1+3], seq[s-1+3:]]
-                    seq[1] = random.sample(GLY_MOTIFS, 1)[0]
-                seq = "".join(seq)
-            seq_to_design = seq
+                seq_to_design = add_single_mutation(
+                    site=s, 
+                    wt_seq=seq_to_design, 
+                    structure_unfav_sites=structure_unfav_sites, 
+                    sequence_unfav_sites=sequence_unfav_sites, 
+                    low_rsasa_sites=low_rsasa_sites, 
+                    fav_sites=fav_sites, 
+                    N_minus_1_aa=wt_seq[s-2] if s > 1 else "X",
+                    N_plus_1_aa=wt_seq[s] if s <= (len(wt_seq) - 1) else "X",
+                    N_plus_2_aa=wt_seq[s+1] if s <= (len(wt_seq) - 2) else "X",
+                    trial_times=trial_times,
+                )
+            seqs[rec.description] = seq_to_design
         else:
             seq = str(rec.seq)
-        
-        seqs[rec.description] = seq
+            seqs[rec.description] = seq        
         count_l += seq_num
-    asn_sites = {chain_id: [m.start() + 1 for m in re.finditer(r"NX", seq_to_design)]}
-    # seq = seq.replace("NX", "NP")
-    # print(seq_to_design, asn_sites, seqs, wt_seq)
+        
+    asn_sites = {chain_id: [m.start() + 1 for m in re.finditer(r"N[^P][TS]", seq_to_design)]}
     
     return seq_to_design, asn_sites, seqs, wt_seq
     
 def _load_model(
     base_model_name: str,
     lora_model_name: str,
-    device: torch.device
+    device: torch.device,
+    optional_lora_model_name: Optional[str] = None,
+    load_masked_esm: bool = False,
 ):
-    base_model = EsmModelClassification.from_pretrained(base_model_name, num_labels=2, torch_dtype=torch.float16)
+    base_model = EsmModelClassification.from_pretrained(
+        base_model_name,
+        num_labels=2,
+        torch_dtype=torch.float16,
+    )
+
     model = PeftModel.from_pretrained(base_model, lora_model_name)
     model = model.merge_and_unload()
+
+    if optional_lora_model_name is not None:
+        model = PeftModel.from_pretrained(model, optional_lora_model_name)
+        model = model.merge_and_unload()
+
     model.to(device)
     model.eval()
-    return model
+    
+    if load_masked_esm:
+        masked_lm = EsmForMaskedLM.from_pretrained(base_model_name, torch_dtype=torch.float16).to(device)
+        masked_lm.eval()
+        for p in masked_lm.parameters():
+            p.requires_grad = False
+        
+        return model, masked_lm
+    
+    else:
+        return model
 
 def predict_seq(
+    model: Any,
+    tokenizer: EsmTokenizer,
     sequence: str,
-    base_model_name: str,
-    lora_model_name: str,
     batch_size: int = 8,
 ):
     set_seed(seed=int(time.time()))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = _load_model(base_model_name, lora_model_name, device)
-    tokenizer = EsmTokenizer.from_pretrained(base_model_name)
-    candidate_positions_for_model = [m.start() + 1 for m in re.finditer(r"N.[ST]", sequence)]
+    candidate_positions_for_model = [m.start() + 1 for m in re.finditer(r"N[^P][ST]", sequence)]
     inputs = tokenizer(sequence, return_tensors="pt")
     
     all_predictions = []
@@ -124,9 +154,10 @@ def predict_seq(
     return pos_probs
 
 def hallucinate(
+    model: Any,
+    masked_lm: Any,
+    tokenizer: EsmTokenizer,
     sequence: str,
-    base_model_name: str,
-    lora_model_name: str,
     num_steps: int = 200,
     lr: float = 1e-2,
     temperature: float = 1.0,
@@ -147,18 +178,11 @@ def hallucinate(
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    tokenizer = EsmTokenizer.from_pretrained(base_model_name)
-    model = _load_model(base_model_name, lora_model_name, device)
-    masked_lm = EsmForMaskedLM.from_pretrained(base_model_name, torch_dtype=torch.float16).to(device)
-    masked_lm.eval()
-    for p in masked_lm.parameters():
-        p.requires_grad = False
-
     L = len(sequence)
     A = len(ESM_TOKENS)
 
     x_positions = {i for i, aa in enumerate(sequence) if aa == "X"}
-    motif_matches = [m.start() for m in re.finditer(r"NX[ST]", sequence)]
+    motif_matches = [m.start() for m in re.finditer(r"N[^P][ST]", sequence)]
     p_positions = {m + 1 for m in motif_matches if m + 1 < L}
     opt_positions = sorted(list(x_positions.union(p_positions)))
 
@@ -188,7 +212,7 @@ def hallucinate(
         mask_token_id = tokenizer.mask_token_id
         mask_embed = embedding_weight[mask_token_id]
 
-    candidate_positions = [m.start() for m in re.finditer(r"NX[ST]", sequence)]
+    candidate_positions = [m.start() for m in re.finditer(r"N[^P][ST]", sequence)]
     if len(candidate_positions) == 0:
         print("No NXS/T motifs found; returning input sequence.")
         return sequence
@@ -287,83 +311,113 @@ def hallucinate(
 def halludesign_esm(
     input_fasta_file: str,
     output_dir: str,
+    structure_unfav_sites: set,
+    sequence_unfav_sites: set,
+    low_rsasa_sites: set,
+    fav_sites: set,
     name: str,
     chain_id: str = "A",
     num_designs: int = 1,
-    num_gly_sites: int = 5,
+    num_gly_sites: int = 3,
     n_steps: int = 100,
     learning_rate: float = 1e-2,
     temperature: float = 1.0,
     add_pll_loss: bool = True,
     pll_weight: float = 0.1,
+    predict_structure: bool = True,
 ):
     warnings.filterwarnings("ignore")
     filename = name if name else Path(input_fasta_file).name.split(".")[0]
     wt_structure_file = f"{output_dir}/{filename}.pdb"
-    wt_seq, asn_sites, seqs, original_seq = prepare_seq(
-        input_fasta_file=input_fasta_file,
-        wt_structure_file=wt_structure_file,
-        output_dir=output_dir,
-        name=filename,
-        chain_id=chain_id,
-        num_gly_sites=num_gly_sites,
-    )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    designed_seqs_list = []
-    pos_probs_list = []
-    for i in range(num_designs):
-        designed_seq = hallucinate(
-            sequence=wt_seq,
-            base_model_name="facebook/esm2_t30_150M_UR50D",
-            lora_model_name="./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint",
-            num_steps=n_steps,
-            lr=learning_rate,
-            temperature=temperature,
-            add_pll_loss=add_pll_loss,
-            pll_weight=pll_weight,
-            device=device,
-        )
-        gc.collect()
-        torch.cuda.empty_cache()
-        torch.cuda.reset_max_memory_allocated()
-        
-        pos_probs = predict_seq(
-            sequence=designed_seq,
-            base_model_name="facebook/esm2_t30_150M_UR50D",
-            lora_model_name="./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint",
-            batch_size=8,
-        )
-        designed_seqs_list.append(designed_seq)
-        pos_probs_list.append(pos_probs)
-        with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as f:
-            for seq_des, seq in seqs.items():
-                if "X" in seq:
-                    f.write(f">{seq_des}\n{designed_seq}\n")
-                else:
-                    f.write(f">{seq_des}\n{seq}\n")    
-            f.flush()
-            suffix = f"_designed_{i+1:0{int(len(str(num_designs)))}d}"
-            glycoprotein_structure_file = update_infer(
-                input_fasta_file=f.name,
-                output_dir=output_dir,
-                filename=filename,
-                suffix=suffix,
-            )
-            shutil.rmtree(f"{output_dir}/msa{suffix}")
-        glycanmover = GlycanMover()
-        glycanmover.move(
-            protein_structure_file=glycoprotein_structure_file,
-            glycan_structure_file="./src/G67828VR.pdb",
-            output_pdb=glycoprotein_structure_file,
-            glycan_positions=asn_sites,
+    tokenizer = EsmTokenizer.from_pretrained(BASE_MODEL_NAME)
+    model, masked_llm = _load_model(base_model_name=BASE_MODEL_NAME, lora_model_name=LORA_MODEL_NAME, optional_lora_model_name=HUMAN_LORA_MODEL_NAME, device=device, load_masked_esm=True)
+    
+    num_success = 0
+    trial_times = -1
+    designed_seqs_list_total = []
+    pos_probs_list_total = []
+    while num_success < num_designs:
+        trial_times += 1
+        seq_to_design, asn_sites, seqs, wt_seq = prepare_seq(
+            input_fasta_file=input_fasta_file,
+            wt_structure_file=wt_structure_file,
+            output_dir=output_dir,
+            structure_unfav_sites=structure_unfav_sites,
+            sequence_unfav_sites=sequence_unfav_sites,
+            low_rsasa_sites=low_rsasa_sites,
+            fav_sites=fav_sites,
+            name=filename,
+            chain_id=chain_id,
+            num_gly_sites=num_gly_sites,
+            trial_times=trial_times,
         )
     
+        designed_seqs_list = []
+        pos_probs_list = []
+    
+        for i in range(num_designs):
+            designed_seq = hallucinate(
+                model=model,
+                masked_lm=masked_llm,
+                tokenizer=tokenizer,
+                sequence=seq_to_design,
+                num_steps=n_steps,
+                lr=learning_rate,
+                temperature=temperature,
+                add_pll_loss=add_pll_loss,
+                pll_weight=pll_weight,
+                device=device,
+            )
+            gc.collect()
+            torch.cuda.empty_cache()
+            torch.cuda.reset_max_memory_allocated()
+            
+            pos_probs = predict_seq(
+                model=model,
+                tokenizer=tokenizer,
+                sequence=designed_seq,
+                batch_size=8,
+            )
+            
+            if all(v > 0.5 for v in pos_probs.values()):
+                designed_seqs_list.append(designed_seq)
+                pos_probs_list.append(pos_probs)
+                designed_seqs_list_total.extend(designed_seqs_list)
+                pos_probs_list_total.extend(pos_probs_list)
+                
+                if predict_structure:
+                    with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as f:
+                        for seq_des, seq in seqs.items():
+                            if "X" in seq:
+                                f.write(f">{seq_des}\n{designed_seq}\n")
+                            else:
+                                f.write(f">{seq_des}\n{seq}\n")    
+                        f.flush()
+                        suffix = f"_designed_{i+1:0{int(len(str(num_designs)))}d}"
+                        glycoprotein_structure_file = update_infer(
+                            input_fasta_file=f.name,
+                            input_structure_file=None,
+                            output_dir=output_dir,
+                            filename=filename,
+                            suffix=suffix,
+                        )
+                        shutil.rmtree(f"{output_dir}/msa{suffix}")
+                    glycanmover = GlycanMover()
+                    glycanmover.move(
+                        protein_structure_file=glycoprotein_structure_file,
+                        glycan_structure_file="./src/G67828VR.pdb",
+                        output_pdb=glycoprotein_structure_file,
+                        glycan_positions=asn_sites,
+                    )
+        num_success = len(designed_seqs_list_total)
+        
     reporter = designer_report(
         input_fasta_file=input_fasta_file,
-        wt_seq=wt_seq,
+        wt_seq=seq_to_design,
         asn_sites=asn_sites,
-        designed_seqs=designed_seqs_list,
-        pos_probs_list=pos_probs_list,
+        designed_seqs=designed_seqs_list_total,
+        pos_probs_list=pos_probs_list_total,
         output_html=f"{output_dir}/{filename}_designer_report.html",
     )
     reporter.generate_designer_report()
