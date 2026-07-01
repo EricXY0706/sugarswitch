@@ -26,7 +26,7 @@ def run_prefilters(
     protein_chain_id: str = "A",
     functional_hotspots: list = [],
     enable_glycan_grafting: bool = True,
-) -> None:
+):
     """
     Run prefilters on the input fasta file.
     """
@@ -86,7 +86,8 @@ def run_prefilters(
     )
     
     # 4. Exclude: Sites with inter- and intra- chain interactions, and highly conserved and/or evo-coupled
-    non_editable_regions = ppi_sites | intrachain_sites | hotspots_sites | conserverd_coupling_sites | low_rsasa_sites
+    structure_unfav_sites = ppi_sites | intrachain_sites | hotspots_sites
+    non_editable_regions = structure_unfav_sites | conserverd_coupling_sites | low_rsasa_sites
     editable_regions = set(list(range(1, len(query_sequence)+1))) - non_editable_regions
     
     # ---------------------------------------------------- Ranker ----------------------------------------------------
@@ -120,7 +121,7 @@ def run_prefilters(
             )
         else:
             mut_score_s_next2_S, mut_score_s_next2_T = mut_score_s, mut_score_s
-        mut_score_s_next2 = (mut_score_s_next2_S + mut_score_s_next2_T) / 2
+        mut_score_s_next2 = round((mut_score_s_next2_S + mut_score_s_next2_T) / 2, 3)
 
         ddG_s, dTm_s = spired.get_mutation_effect(
             wt_seq=query_sequence,
@@ -137,8 +138,8 @@ def run_prefilters(
             )
         else:
             ddG_next2_S, dTm_next2_S, ddG_next2_T, dTm_next2_T = ddG_s, dTm_s, ddG_s, dTm_s
-        ddG_next2 = (ddG_next2_S + ddG_next2_T) / 2
-        dTm_next2 = (dTm_next2_S + dTm_next2_T) / 2
+        ddG_next2 = round((ddG_next2_S + ddG_next2_T) / 2, 3)
+        dTm_next2 = round((dTm_next2_S + dTm_next2_T) / 2, 3)
         
         # 3. Glycan grafting for reference only
         if enable_glycan_grafting:
@@ -197,8 +198,13 @@ def run_prefilters(
     reporter = prefilter_report(
         input_fasta_file=input_fasta_file,
         query_sequence=query_sequence,
+        structure_unfav_sites=structure_unfav_sites,
+        sequence_unfav_sites=conserverd_coupling_sites,
+        low_rsasa_sites=low_rsasa_sites,
         editable_regions=editable_regions,
         df_file=df_file,
         output_html=f"{output_dir}/{filename}_prefilter_report.html",
     )
     reporter.generate_prefilter_report()
+    
+    return structure_unfav_sites, conserverd_coupling_sites, low_rsasa_sites, editable_regions
