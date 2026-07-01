@@ -49,7 +49,7 @@
       WNPPTFSPALLVVTEGDNATFTCSFSNTSESFVLNWYRMS...
       ```
    - **Designer**:  
-      ➡️ Run the Designer to design the N-glycosylated sequence with mutations and possible indels given the WT sequence. In this case, the pipeline will run **Prefilter** first.
+      ➡️ Run the **Designer** to design the N-glycosylated sequence with mutations and possible indels given the WT sequence. In this case, the pipeline will run **Prefilter** first.
       ```Python
       # An example
 
