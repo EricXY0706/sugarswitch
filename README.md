@@ -37,7 +37,7 @@
          --out_dir "output_dir" \
          --chain_id "CHAIN_ID" \
          --functional_hotspots "[1,2,3,'4-10']" \ # This has to be a string with quotation marks
-         --enable_glycan_grafting True
+         --enable_glycan_grafting True \ # Whether to graft a glycan onto the protein surface
       ```
       ⚠️ The input file in FASTA format should contain at least one sequence.
       ```txt
@@ -49,23 +49,7 @@
       WNPPTFSPALLVVTEGDNATFTCSFSNTSESFVLNWYRMS...
       ```
    - **Designer**:  
-      ➡️ Run the Designer to design the N-glycosylated sequence with mutations and possible indels given the WT sequence
-      ```Python
-      # An example: Design 3 sequences with 5 N-glycosylation sites each
-
-      python run_sugarswitch.py designer \
-         --input_fasta_file "input_fasta_file" \
-         --out_dir "output_dir" \
-         --chain_id "CHAIN_ID" \
-         --num_designs 3 \
-         --num_gly_sites 5 \
-         --num_steps 100 \ # Number of hallucination steps
-         --add_pll_loss True \ # This makes the sequence more natural but significantly increases computational overhead
-         --gpu_id 0
-      ```
-   
-   - **Pipeline**:  
-      ➡️ Run the pipeline with both **Prefilter** and **Designer**
+      ➡️ Run the Designer to design the N-glycosylated sequence with mutations and possible indels given the WT sequence. In this case, the pipeline will run **Prefilter** first.
       ```Python
       # An example
 
@@ -78,8 +62,8 @@
          --enable_glycan_grafting True
          --num_designs 3 \
          --num_gly_sites 5 \
-         --num_steps 100 \ # Number of hallucination steps
          --add_pll_loss True \ # This makes the sequence more natural but significantly increases computational overhead
+         --predict_structure True \ # Whether to predict the structure of designed glycoprotein
       ```
 2. Optionally update the configrations for **Prefilter** in `config.py`
    
