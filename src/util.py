@@ -1995,9 +1995,12 @@ class BordaCount:
         return df
 
 class prefilter_report:
-    def __init__(self, input_fasta_file: str, query_sequence: str, editable_regions: set, df_file: str, output_html: str):
+    def __init__(self, input_fasta_file: str, query_sequence: str, structure_unfav_sites: set, sequence_unfav_sites: set, low_rsasa_sites: set, editable_regions: set, df_file: str, output_html: str):
         self.input_fasta_file = input_fasta_file
         self.query_sequence = query_sequence
+        self.structure_unfav_sites=structure_unfav_sites,
+        self.sequence_unfav_sites=sequence_unfav_sites,
+        self.low_rsasa_sites=low_rsasa_sites,
         self.editable_regions = editable_regions
         self.df_file = df_file
         self.output_html = output_html
@@ -2133,7 +2136,8 @@ class prefilter_report:
         """
         Generate a self-contained HTML report from prefilter results.
         """
-        
+        from datetime import datetime
+
         df = pd.read_csv(self.df_file)
 
         # --- heatmap ---
@@ -2151,11 +2155,11 @@ class prefilter_report:
                 aa = self.query_sequence[i]
                 if pos in self.editable_regions:
                     chars.append(
-                        f'<span class="aa editable" title="Pos {pos} &#10004; editable">{aa}</span>'
+                        f'<span class="aa editable" data-pos="{pos}" data-info="Editable">{aa}</span>'
                     )
                 else:
                     chars.append(
-                        f'<span class="aa non-edit" title="Pos {pos} &#10008; non-editable">{aa}</span>'
+                        f'<span class="aa non-edit" data-pos="{pos}" data-info="Non-editable">{aa}</span>'
                     )
                 if (i - start + 1) % 10 == 0 and i + 1 != end:
                     chars.append('<span class="gap"> </span>')
@@ -2164,9 +2168,15 @@ class prefilter_report:
         sequence_html = "\n".join(seq_lines)
 
         # --- editable regions summary ---
+        structure_unfav_sorted = sorted(self.structure_unfav_sites)
+        sequence_unfav_sorted = sorted(self.sequence_unfav_sites)
+        low_rsasa_sorted = sorted(self.low_rsasa_sites)
         editable_sorted = sorted(self.editable_regions)
         non_editable = sorted(set(range(1, len(self.query_sequence) + 1)) - self.editable_regions)
         editable_str = self._compress_ranges(editable_sorted)
+        structure_unfav_str = self._compress_ranges(structure_unfav_sorted)
+        sequence_unfav_str = self._compress_ranges(sequence_unfav_sorted)
+        low_rsasa_str = self._compress_ranges(low_rsasa_sorted)
         non_editable_str = self._compress_ranges(non_editable)
 
         # --- results table ---
@@ -2179,263 +2189,452 @@ class prefilter_report:
             float_format=lambda x: f"{x:.3f}",
         )
 
+        generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+
         # --- assemble HTML ---
         html = f"""<!DOCTYPE html>
-    <html lang="en">
-    <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SugarSwitch Prefilter Report</title>
-    <style>
-    :root {{
-        --bg: #f5f7fa;
-        --card: #ffffff;
-        --accent: #4a76a8;
-        --accent-light: #e8f0fe;
-        --edit-bg: #d4edda;
-        --edit-border: #28a745;
-        --nonedit-bg: #f8f9fa;
-        --text: #2c3e50;
-        --muted: #6c757d;
-        --border: #dee2e6;
-        --shadow: 0 2px 8px rgba(0,0,0,0.08);
-    }}
-    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-    body {{
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        background: var(--bg);
-        color: var(--text);
-        line-height: 1.6;
-        padding: 20px;
-    }}
-    .container {{ max-width: 1200px; margin: 0 auto; }}
-    header {{
-        background: linear-gradient(135deg, #4a76a8 0%, #6a9fd8 100%);
-        color: #fff;
-        padding: 28px 36px;
-        border-radius: 12px;
-        margin-bottom: 24px;
-        box-shadow: var(--shadow);
-    }}
-    header h1 {{ font-size: 24px; font-weight: 700; }}
-    header p {{ opacity: 0.9; margin-top: 4px; font-size: 14px; }}
-    .card {{
-        background: var(--card);
-        border-radius: 10px;
-        padding: 24px 28px;
-        margin-bottom: 20px;
-        box-shadow: var(--shadow);
-    }}
-    .card h2 {{
-        font-size: 17px;
-        font-weight: 600;
-        color: var(--accent);
-        margin-bottom: 14px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid var(--accent-light);
-    }}
-    .info-grid {{
-        display: grid;
-        grid-template-columns: 140px 1fr;
-        gap: 8px 16px;
-        font-size: 14px;
-    }}
-    .info-grid .label {{ font-weight: 600; color: var(--muted); }}
-    .info-grid .value {{ word-break: break-all; }}
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SugarSwitch Prefilter Report</title>
+<style>
+{_SUGARSWITCH_BASE_CSS}
+</style>
+</head>
+<body>
+<div id="seq-tooltip"></div>
+<div class="container">
 
-    /* sequence viewer */
-    .seq-viewer {{
-        font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
-        font-size: 13px;
-        line-height: 2;
-        white-space: pre;
-        overflow-x: auto;
-        padding: 16px;
-        background: #fafbfc;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-    }}
-    .pos-num {{ color: var(--muted); font-size: 11px; user-select: none; }}
-    .aa {{
-        display: inline-block;
-        width: 1.1em;
-        text-align: center;
-        border-radius: 3px;
-        cursor: default;
-        transition: transform 0.1s;
-    }}
-    .aa:hover {{ transform: scale(1.3); z-index: 1; position: relative; }}
-    .editable {{
-        background: var(--edit-bg);
-        color: #155724;
-        font-weight: 600;
-        border-bottom: 2px solid var(--edit-border);
-    }}
-    .non-edit {{
-        background: var(--nonedit-bg);
-        color: #888;
-    }}
-    .gap {{ width: 0.5em; display: inline-block; }}
-
-    .legend {{
-        display: flex;
-        gap: 20px;
-        margin-top: 12px;
-        font-size: 13px;
-    }}
-    .legend-item {{ display: flex; align-items: center; gap: 6px; }}
-    .legend-swatch {{
-        display: inline-block;
-        width: 16px; height: 16px;
-        border-radius: 3px;
-    }}
-    .swatch-edit {{ background: var(--edit-bg); border: 1px solid var(--edit-border); }}
-    .swatch-nonedit {{ background: var(--nonedit-bg); border: 1px solid var(--border); }}
-
-    /* regions */
-    .region-box {{
-        font-family: "SF Mono", Consolas, monospace;
-        font-size: 13px;
-        padding: 10px 14px;
-        border-radius: 6px;
-        margin-bottom: 10px;
-        word-break: break-word;
-    }}
-    .region-edit {{ background: #d4edda; border-left: 4px solid #28a745; }}
-    .region-nonedit {{ background: #fff3cd; border-left: 4px solid #ffc107; }}
-    .region-label {{ font-weight: 600; margin-bottom: 2px; font-size: 13px; }}
-
-    .stats {{
-        display: flex;
-        gap: 16px;
-        margin-bottom: 14px;
-        flex-wrap: wrap;
-    }}
-    .stat {{
-        background: var(--accent-light);
-        padding: 8px 16px;
-        border-radius: 8px;
-        font-size: 14px;
-    }}
-    .stat strong {{ color: var(--accent); }}
-
-    /* table */
-    .table-wrap {{ overflow-x: auto; }}
-    .data-table {{
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 13px;
-        white-space: nowrap;
-    }}
-    .data-table th {{
-        background: var(--accent);
-        color: #fff;
-        padding: 10px 12px;
-        text-align: left;
-        font-weight: 600;
-        position: sticky;
-        top: 0;
-    }}
-    .data-table td {{
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--border);
-    }}
-    .data-table tr:hover {{ background: var(--accent-light); }}
-    .data-table tr:nth-child(even) {{ background: #f8f9fa; }}
-    .data-table tr:nth-child(even):hover {{ background: var(--accent-light); }}
-
-    /* heatmap */
-    .heatmap-img {{
-        max-width: 100%;
-        height: auto;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-    }}
-    footer {{
-        text-align: center;
-        color: var(--muted);
-        font-size: 12px;
-        margin-top: 24px;
-        padding: 16px;
-    }}
-    </style>
-    </head>
-    <body>
-    <div class="container">
-
-    <header>
+<header>
+    <div class="header-mark">S</div>
+    <div>
         <h1>SugarSwitch &mdash; Prefilter Report</h1>
         <p>N-linked glycosylation site screening results</p>
-    </header>
-
-    <!-- Input Info -->
-    <div class="card">
-        <h2>Input Information</h2>
-        <div class="info-grid">
-            <div class="label">FASTA File</div>
-            <div class="value">{self.input_fasta_file}</div>
-            <div class="label">Sequence Length</div>
-            <div class="value">{len(self.query_sequence)} residues</div>
-            <div class="label">Editable Sites</div>
-            <div class="value">{len(editable_sorted)} / {len(self.query_sequence)}</div>
-            <div class="label">Candidates</div>
-            <div class="value">{len(df)} mutations evaluated</div>
-        </div>
     </div>
+    <div class="meta">Generated {generated_at}</div>
+</header>
 
-    <!-- Query Sequence -->
-    <div class="card">
-        <h2>Query Sequence</h2>
-        <div class="seq-viewer">
+<div class="card">
+    <h2>Input Information</h2>
+    <div class="info-grid">
+        <div class="label">FASTA File</div>
+        <div class="value">{self.input_fasta_file}</div>
+        <div class="label">Sequence Length</div>
+        <div class="value">{len(self.query_sequence)} residues</div>
+        <div class="label">Editable Sites</div>
+        <div class="value">{len(editable_sorted)} / {len(self.query_sequence)}</div>
+        <div class="label">Candidates</div>
+        <div class="value">{len(df)} mutations evaluated</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Query Sequence</h2>
+    <div class="seq-viewer">
 {sequence_html}
+    </div>
+    <div class="legend">
+        <div class="legend-item"><span class="legend-swatch swatch-editable"></span> Editable</div>
+        <div class="legend-item"><span class="legend-swatch swatch-other"></span> Non-editable (functional / conserved / co-evolving / low-SASA)</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Editable Regions</h2>
+    <div class="stats">
+        <div class="stat"><span class="dot dot-editable"></span><strong>{len(editable_sorted)}</strong><span class="label-txt">editable positions</span></div>
+        <div class="stat"><span class="dot dot-other"></span><strong>{len(non_editable)}</strong><span class="label-txt">filtered out</span></div>
+    </div>
+    <div class="region-grid">
+        <div class="region-box re-other">
+            <div class="region-label">Structural-unfavorable positions</div>
+            <div>{structure_unfav_str or '<span class="region-empty">None</span>'}</div>
         </div>
-        <div class="legend">
-            <div class="legend-item"><span class="legend-swatch swatch-edit"></span> Editable</div>
-            <div class="legend-item"><span class="legend-swatch swatch-nonedit"></span> Non-editable (functional / conserved / co-evolving / low-SASA)</div>
+        <div class="region-box re-other">
+            <div class="region-label">Sequence-unfavorable positions</div>
+            <div>{sequence_unfav_str or '<span class="region-empty">None</span>'}</div>
+        </div>
+        <div class="region-box re-other">
+            <div class="region-label">Low-rSASA positions</div>
+            <div>{low_rsasa_str or '<span class="region-empty">None</span>'}</div>
+        </div>
+        <div class="region-box re-other">
+            <div class="region-label">Non-editable positions</div>
+            <div>{non_editable_str or '<span class="region-empty">None</span>'}</div>
+        </div>
+        <div class="region-box re-editable">
+            <div class="region-label">Editable positions</div>
+            <div>{editable_str or '<span class="region-empty">None</span>'}</div>
         </div>
     </div>
+</div>
 
-    <!-- Editable Regions -->
-    <div class="card">
-        <h2>Editable Regions</h2>
-        <div class="stats">
-            <div class="stat"><strong>{len(editable_sorted)}</strong> editable positions</div>
-            <div class="stat"><strong>{len(non_editable)}</strong> filtered out</div>
-        </div>
-        <div class="region-box region-edit">
-            <div class="region-label">Editable positions:</div>
-            {editable_str}
-        </div>
-        <div class="region-box region-nonedit">
-            <div class="region-label">Non-editable positions:</div>
-            {non_editable_str}
-        </div>
+<div class="card">
+    <h2>Ranked Mutation Results</h2>
+    <div class="table-wrap">
+        {table_html}
     </div>
+</div>
 
-    <!-- Results Table -->
-    <div class="card">
-        <h2>Ranked Mutation Results</h2>
-        <div class="table-wrap">
-            {table_html}
-        </div>
-    </div>
+<div class="card">
+    <h2>Heatmap</h2>
+    <img class="heatmap-img" src="data:image/png;base64,{heatmap_b64}" alt="Single Point Mutations Heatmap">
+</div>
 
-    <!-- Heatmap -->
-    <div class="card">
-        <h2>Heatmap</h2>
-        <img class="heatmap-img" src="data:image/png;base64,{heatmap_b64}" alt="Single Point Mutations Heatmap">
-    </div>
+<footer>
+    Generated by SugarSwitch &bull; Prefilter Pipeline
+</footer>
 
-    <footer>
-        Generated by SugarSwitch &bull; Prefilter Pipeline
-    </footer>
-
-    </div>
-    </body>
-    </html>"""
+</div>
+{_SUGARSWITCH_TOOLTIP_JS}
+</body>
+</html>"""
 
         with open(self.output_html, "w") as f:
             f.write(html)
+
+# Shared Claude-style design system used by every SugarSwitch HTML report in this module.
+_SUGARSWITCH_BASE_CSS = """
+:root {
+    --bg: #F7F4ED;
+    --card: #FFFFFF;
+    --ink: #2B2620;
+    --muted: #83786B;
+    --border: #E7E1D3;
+    --accent: #D97757;
+    --accent-dark: #BC5F42;
+    --accent-light: #F5E6DD;
+    --shadow: 0 1px 2px rgba(43,38,32,0.05), 0 6px 20px rgba(43,38,32,0.06);
+
+    --editable-bg: #E7F0E5;
+    --editable-border: #6E9A6E;
+    --editable-text: #3E6B3E;
+
+    --structure-bg: #E7E9F5;
+    --structure-border: #7480C4;
+    --structure-text: #454F94;
+
+    --sequence-bg: #F6E4E1;
+    --sequence-border: #C6705C;
+    --sequence-text: #96432E;
+
+    --buried-bg: #F2E9D6;
+    --buried-border: #B99257;
+    --buried-text: #7A5C29;
+
+    --other-bg: #ECE9E1;
+    --other-border: #A79C8C;
+    --other-text: #5B5346;
+
+    --hit-bg: #E7F0E5;
+    --hit-border: #6E9A6E;
+    --hit-text: #3E6B3E;
+
+    --miss-bg: #F6E4E1;
+    --miss-border: #C6705C;
+    --miss-text: #96432E;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    padding: 32px 20px;
+    -webkit-font-smoothing: antialiased;
+}
+.container { max-width: 1180px; margin: 0 auto; }
+
+header {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 28px 32px;
+    border-radius: 16px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+.header-mark {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-family: Georgia, "Iowan Old Style", serif;
+    font-size: 22px;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(217,119,87,0.35);
+}
+header h1 {
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+header p { color: var(--muted); margin-top: 3px; font-size: 13.5px; }
+header .meta {
+    margin-left: auto;
+    text-align: right;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 26px 30px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+}
+.card h2 {
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.card h2::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: inline-block;
+}
+.card h3 {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--accent-dark);
+    margin: 18px 0 8px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 10px 16px;
+    font-size: 14px;
+}
+.info-grid .label { font-weight: 600; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.03em; padding-top: 2px; }
+.info-grid .value { word-break: break-all; }
+
+.stats {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+}
+.stat {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+.stat .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.stat strong { font-size: 16px; color: var(--ink); }
+.stat span.label-txt { color: var(--muted); }
+.dot-editable { background: var(--editable-border); }
+.dot-structure { background: var(--structure-border); }
+.dot-sequence { background: var(--sequence-border); }
+.dot-buried { background: var(--buried-border); }
+.dot-other { background: var(--other-border); }
+
+/* sequence viewer */
+.seq-viewer {
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+    font-size: 13px;
+    line-height: 2;
+    white-space: pre;
+    overflow-x: auto;
+    padding: 18px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+}
+.pos-num { color: var(--muted); font-size: 11px; user-select: none; }
+.aa {
+    display: inline-block;
+    width: 1.1em;
+    text-align: center;
+    border-radius: 3px;
+    cursor: default;
+    transition: transform 0.1s ease;
+}
+.aa:hover { transform: scale(1.35); z-index: 1; position: relative; }
+.editable { background: var(--editable-bg); color: var(--editable-text); font-weight: 600; border-bottom: 2px solid var(--editable-border); }
+.non-edit { background: var(--other-bg); color: var(--other-text); }
+.nonedit-structure { background: var(--structure-bg); color: var(--structure-text); font-weight: 600; border-bottom: 2px solid var(--structure-border); }
+.nonedit-sequence { background: var(--sequence-bg); color: var(--sequence-text); font-weight: 600; border-bottom: 2px solid var(--sequence-border); }
+.nonedit-buried { background: var(--buried-bg); color: var(--buried-text); font-weight: 600; border-bottom: 2px solid var(--buried-border); }
+.nonedit-other { background: var(--other-bg); color: var(--other-text); border-bottom: 2px solid var(--other-border); }
+.aa-default { background: var(--bg); color: var(--muted); }
+.asn-site { background: var(--buried-bg); color: var(--buried-text); font-weight: 600; border-bottom: 2px solid var(--buried-border); }
+.pos-hit { background: var(--hit-bg); color: var(--hit-text); font-weight: 600; border-bottom: 2px solid var(--hit-border); }
+.pos-miss { background: var(--miss-bg); color: var(--miss-text); font-weight: 600; border-bottom: 2px solid var(--miss-border); }
+.gap { width: 0.5em; display: inline-block; }
+
+.legend {
+    display: flex;
+    gap: 18px;
+    margin-top: 14px;
+    font-size: 12.5px;
+    flex-wrap: wrap;
+    color: var(--muted);
+}
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-swatch {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border-radius: 4px;
+}
+.swatch-editable { background: var(--editable-bg); border: 1px solid var(--editable-border); }
+.swatch-structure { background: var(--structure-bg); border: 1px solid var(--structure-border); }
+.swatch-sequence { background: var(--sequence-bg); border: 1px solid var(--sequence-border); }
+.swatch-buried { background: var(--buried-bg); border: 1px solid var(--buried-border); }
+.swatch-other { background: var(--other-bg); border: 1px solid var(--other-border); }
+.swatch-asn { background: var(--buried-bg); border: 1px solid var(--buried-border); }
+.swatch-pos-hit { background: var(--hit-bg); border: 1px solid var(--hit-border); }
+.swatch-pos-miss { background: var(--miss-bg); border: 1px solid var(--miss-border); }
+.swatch-default { background: var(--bg); border: 1px solid var(--border); }
+
+.region-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+@media (max-width: 720px) { .region-grid { grid-template-columns: 1fr; } }
+.region-box {
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 12.5px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    word-break: break-word;
+    background: var(--bg);
+    border-left: 4px solid var(--border);
+}
+.region-box.re-editable { border-left-color: var(--editable-border); }
+.region-box.re-structure { border-left-color: var(--structure-border); }
+.region-box.re-sequence { border-left-color: var(--sequence-border); }
+.region-box.re-buried { border-left-color: var(--buried-border); }
+.region-box.re-other { border-left-color: var(--other-border); }
+.region-label {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-weight: 600;
+    margin-bottom: 6px;
+    font-size: 12.5px;
+    color: var(--ink);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.region-empty { color: var(--muted); font-style: italic; }
+
+.table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); }
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    white-space: nowrap;
+}
+.data-table th {
+    background: var(--ink);
+    color: #F7F4ED;
+    padding: 11px 14px;
+    text-align: left;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.data-table td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover { background: var(--accent-light); }
+.data-table tr:nth-child(even) { background: #FBFAF6; }
+.data-table tr:nth-child(even):hover { background: var(--accent-light); }
+
+.heatmap-img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+}
+footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 28px;
+    padding: 16px;
+}
+#seq-tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--ink);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-family: "SF Mono", Consolas, monospace;
+    white-space: nowrap;
+    z-index: 9999;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+#seq-tooltip.visible { opacity: 1; }
+"""
+
+_SUGARSWITCH_TOOLTIP_JS = """
+<script>
+(function() {
+    const tip = document.getElementById('seq-tooltip');
+    document.addEventListener('mouseover', function(e) {
+        const el = e.target.closest('.aa');
+        if (!el) return;
+        const pos = el.dataset.pos;
+        if (!pos) return;
+        let text = 'Pos ' + pos;
+        if (el.dataset.prob) {
+            text += ' | prob: ' + el.dataset.prob + ' (' + el.dataset.pct + ')';
+        } else if (el.dataset.info) {
+            text += ' | ' + el.dataset.info;
+        }
+        tip.textContent = text;
+        tip.classList.add('visible');
+    });
+    document.addEventListener('mousemove', function(e) {
+        if (tip.classList.contains('visible')) {
+            tip.style.left = (e.clientX + 12) + 'px';
+            tip.style.top = (e.clientY - 32) + 'px';
+        }
+    });
+    document.addEventListener('mouseout', function(e) {
+        if (e.target.closest('.aa')) {
+            tip.classList.remove('visible');
+        }
+    });
+})();
+</script>
+"""
 
 class designer_report:
     def __init__(
@@ -2499,6 +2698,7 @@ class designer_report:
 
     def generate_designer_report(self):
         """Generate a self-contained HTML report for halludesign_esm results."""
+        from datetime import datetime
 
         # Collect all Asn positions across chains
         all_asn_positions = set()
@@ -2533,30 +2733,31 @@ class designer_report:
                 prob_rows += f"<tr><td>{pos}</td><td>{motif}</td><td>{prob:.4f}</td><td>{pred}</td></tr>\n"
 
             designed_cards.append(f"""
-    <div class="card">
-        <h2>Design {idx + 1}</h2>
-        <div class="info-grid" style="margin-bottom:14px;">
-            <div class="label">Mutations</div>
-            <div class="value">{mut_str}</div>
-        </div>
-        <div class="seq-viewer">
+<div class="card">
+    <h2>Design {idx + 1}</h2>
+    <div class="info-grid" style="margin-bottom:14px;">
+        <div class="label">Mutations</div>
+        <div class="value">{mut_str}</div>
+    </div>
+    <div class="seq-viewer">
 {seq_html}
-        </div>
-        <div class="legend">
-            <div class="legend-item"><span class="legend-swatch swatch-pos-hit"></span> Candidate pos (prob &ge; 0.5)</div>
-            <div class="legend-item"><span class="legend-swatch swatch-pos-miss"></span> Candidate pos (prob &lt; 0.5)</div>
-            <div class="legend-item"><span class="legend-swatch swatch-default"></span> Other residues</div>
-        </div>
-        <h3 style="margin-top:16px;font-size:14px;color:#4a76a8;">Glycosylation Predictions</h3>
-        <div class="table-wrap" style="margin-top:8px;">
-            <table class="data-table">
-                <thead><tr><th>Position</th><th>Motif</th><th>Probability</th><th>Prediction</th></tr></thead>
-                <tbody>{prob_rows}</tbody>
-            </table>
-        </div>
-    </div>""")
+    </div>
+    <div class="legend">
+        <div class="legend-item"><span class="legend-swatch swatch-pos-hit"></span> Candidate pos (prob &ge; 0.5)</div>
+        <div class="legend-item"><span class="legend-swatch swatch-pos-miss"></span> Candidate pos (prob &lt; 0.5)</div>
+        <div class="legend-item"><span class="legend-swatch swatch-default"></span> Other residues</div>
+    </div>
+    <h3>Glycosylation Predictions</h3>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead><tr><th>Position</th><th>Motif</th><th>Probability</th><th>Prediction</th></tr></thead>
+            <tbody>{prob_rows}</tbody>
+        </table>
+    </div>
+</div>""")
 
         designed_html = "\n".join(designed_cards)
+        generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -2565,164 +2766,7 @@ class designer_report:
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SugarSwitch Designer Report</title>
 <style>
-:root {{
-    --bg: #f5f7fa;
-    --card: #ffffff;
-    --accent: #4a76a8;
-    --accent-light: #e8f0fe;
-    --text: #2c3e50;
-    --muted: #6c757d;
-    --border: #dee2e6;
-    --shadow: 0 2px 8px rgba(0,0,0,0.08);
-}}
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.6;
-    padding: 20px;
-}}
-.container {{ max-width: 1200px; margin: 0 auto; }}
-header {{
-    background: linear-gradient(135deg, #4a76a8 0%, #6a9fd8 100%);
-    color: #fff;
-    padding: 28px 36px;
-    border-radius: 12px;
-    margin-bottom: 24px;
-    box-shadow: var(--shadow);
-}}
-header h1 {{ font-size: 24px; font-weight: 700; }}
-header p {{ opacity: 0.9; margin-top: 4px; font-size: 14px; }}
-.card {{
-    background: var(--card);
-    border-radius: 10px;
-    padding: 24px 28px;
-    margin-bottom: 20px;
-    box-shadow: var(--shadow);
-}}
-.card h2 {{
-    font-size: 17px;
-    font-weight: 600;
-    color: var(--accent);
-    margin-bottom: 14px;
-    padding-bottom: 8px;
-    border-bottom: 2px solid var(--accent-light);
-}}
-.info-grid {{
-    display: grid;
-    grid-template-columns: 160px 1fr;
-    gap: 8px 16px;
-    font-size: 14px;
-}}
-.info-grid .label {{ font-weight: 600; color: var(--muted); }}
-.info-grid .value {{ word-break: break-all; }}
-
-.seq-viewer {{
-    font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
-    font-size: 13px;
-    line-height: 2;
-    white-space: pre;
-    overflow-x: auto;
-    padding: 16px;
-    background: #fafbfc;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-}}
-.pos-num {{ color: var(--muted); font-size: 11px; user-select: none; }}
-.aa {{
-    display: inline-block;
-    width: 1.1em;
-    text-align: center;
-    border-radius: 3px;
-    cursor: default;
-    transition: transform 0.1s;
-}}
-.aa:hover {{ transform: scale(1.3); z-index: 1; position: relative; }}
-.aa-default {{ background: #f8f9fa; color: #888; }}
-.asn-site {{
-    background: #fff3cd;
-    color: #856404;
-    font-weight: 600;
-    border-bottom: 2px solid #ffc107;
-}}
-.pos-hit {{
-    background: #d4edda;
-    color: #155724;
-    font-weight: 600;
-    border-bottom: 2px solid #28a745;
-}}
-.pos-miss {{
-    background: #f8d7da;
-    color: #721c24;
-    font-weight: 600;
-    border-bottom: 2px solid #dc3545;
-}}
-.gap {{ width: 0.5em; display: inline-block; }}
-
-.legend {{
-    display: flex;
-    gap: 20px;
-    margin-top: 12px;
-    font-size: 13px;
-}}
-.legend-item {{ display: flex; align-items: center; gap: 6px; }}
-.legend-swatch {{
-    display: inline-block;
-    width: 16px; height: 16px;
-    border-radius: 3px;
-}}
-.swatch-asn {{ background: #fff3cd; border: 1px solid #ffc107; }}
-.swatch-pos-hit {{ background: #d4edda; border: 1px solid #28a745; }}
-.swatch-pos-miss {{ background: #f8d7da; border: 1px solid #dc3545; }}
-.swatch-default {{ background: #f8f9fa; border: 1px solid var(--border); }}
-
-.table-wrap {{ overflow-x: auto; }}
-.data-table {{
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    white-space: nowrap;
-}}
-.data-table th {{
-    background: var(--accent);
-    color: #fff;
-    padding: 10px 12px;
-    text-align: left;
-    font-weight: 600;
-    position: sticky;
-    top: 0;
-}}
-.data-table td {{
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border);
-}}
-.data-table tr:hover {{ background: var(--accent-light); }}
-.data-table tr:nth-child(even) {{ background: #f8f9fa; }}
-.data-table tr:nth-child(even):hover {{ background: var(--accent-light); }}
-footer {{
-    text-align: center;
-    color: var(--muted);
-    font-size: 12px;
-    margin-top: 24px;
-    padding: 16px;
-}}
-#seq-tooltip {{
-    position: fixed;
-    pointer-events: none;
-    background: #2c3e50;
-    color: #fff;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 13px;
-    font-family: "SF Mono", Consolas, monospace;
-    white-space: nowrap;
-    z-index: 9999;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-    opacity: 0;
-    transition: opacity 0.15s;
-}}
-#seq-tooltip.visible {{ opacity: 1; }}
+{_SUGARSWITCH_BASE_CSS}
 </style>
 </head>
 <body>
@@ -2730,11 +2774,14 @@ footer {{
 <div class="container">
 
 <header>
-    <h1>SugarSwitch &mdash; Designer Report</h1>
-    <p>ESM-guided glycosylation sequence design results</p>
+    <div class="header-mark">S</div>
+    <div>
+        <h1>SugarSwitch &mdash; Designer Report</h1>
+        <p>ESM-guided glycosylation sequence design results</p>
+    </div>
+    <div class="meta">Generated {generated_at}</div>
 </header>
 
-<!-- Input Info -->
 <div class="card">
     <h2>Input Information</h2>
     <div class="info-grid">
@@ -2749,7 +2796,6 @@ footer {{
     </div>
 </div>
 
-<!-- WT Sequence -->
 <div class="card">
     <h2>Wild-Type Sequence</h2>
     <div class="seq-viewer">
@@ -2761,7 +2807,6 @@ footer {{
     </div>
 </div>
 
-<!-- Designed Sequences -->
 {designed_html}
 
 <footer>
@@ -2769,36 +2814,7 @@ footer {{
 </footer>
 
 </div>
-<script>
-(function() {{
-    const tip = document.getElementById('seq-tooltip');
-    document.addEventListener('mouseover', function(e) {{
-        const el = e.target.closest('.aa');
-        if (!el) return;
-        const pos = el.dataset.pos;
-        if (!pos) return;
-        let text = 'Pos ' + pos;
-        if (el.dataset.prob) {{
-            text += ' | prob: ' + el.dataset.prob + ' (' + el.dataset.pct + ')';
-        }} else if (el.dataset.info) {{
-            text += ' | ' + el.dataset.info;
-        }}
-        tip.textContent = text;
-        tip.classList.add('visible');
-    }});
-    document.addEventListener('mousemove', function(e) {{
-        if (tip.classList.contains('visible')) {{
-            tip.style.left = (e.clientX + 12) + 'px';
-            tip.style.top = (e.clientY - 32) + 'px';
-        }}
-    }});
-    document.addEventListener('mouseout', function(e) {{
-        if (e.target.closest('.aa')) {{
-            tip.classList.remove('visible');
-        }}
-    }});
-}})();
-</script>
+{_SUGARSWITCH_TOOLTIP_JS}
 </body>
 </html>"""
 
