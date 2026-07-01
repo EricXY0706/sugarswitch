@@ -69,7 +69,7 @@
    
    - **pipeline configurations**:  
       ⚠️ We recommand not adjusting the **EVCouplings** related configs (EVC, unless you are familiar with the parameters) and empirically pre-defined **glycan chain topological parameters** (bond length, angles, and dihedrals).  
-      ✅ `conservation_threshold`, `evc_coupling_threshold`, and `sasa_cutoff` can be appropriately adjusted.
+      ✅ `conservation_threshold`, `evc_coupling_threshold`, and `rsasa_threshold` can be appropriately adjusted.
       ```Python
       # An example
       
