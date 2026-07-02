@@ -2236,7 +2236,7 @@ class prefilter_report:
     </div>
     <div class="legend">
         <div class="legend-item"><span class="legend-swatch swatch-editable"></span> Editable</div>
-        <div class="legend-item"><span class="legend-swatch swatch-other"></span> Non-editable (functional / conserved / co-evolving / low-SASA)</div>
+        <div class="legend-item"><span class="legend-swatch swatch-other"></span> Non-editable (functional / interaction / conserved / co-evolving / low-rSASA)</div>
     </div>
 </div>
 
@@ -2263,7 +2263,7 @@ class prefilter_report:
             <div class="region-label">Non-editable positions</div>
             <div>{non_editable_str or '<span class="region-empty">None</span>'}</div>
         </div>
-        <div class="region-box re-editable">
+        <div class="region-box re-editable" style="grid-column: 1 / -1;">
             <div class="region-label">Editable positions</div>
             <div>{editable_str or '<span class="region-empty">None</span>'}</div>
         </div>
