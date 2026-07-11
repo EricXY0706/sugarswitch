@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import seaborn as sns
 from sklearn.preprocessing import MinMaxScaler
+from html import escape
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -1278,8 +1279,7 @@ class InteractionAnalyzer:
                 chain_b, resseq_b, _resname_b = res_b.split(":")
 
                 if chain_a == chain_id and chain_b == chain_id:
-                    intrachain_sites.add(int(resseq_a))
-                    intrachain_sites.add(int(resseq_b))
+                    intrachain_sites.add(int(resseq))
 
         return intrachain_sites
     
@@ -1995,12 +1995,15 @@ class BordaCount:
         return df
 
 class prefilter_report:
-    def __init__(self, input_fasta_file: str, query_sequence: str, structure_unfav_sites: set, sequence_unfav_sites: set, low_rsasa_sites: set, editable_regions: set, df_file: str, output_html: str):
+    def __init__(self, input_fasta_file: str, query_sequence: str, ppi_sites: set, intrachain_sites: set, hotspots_sites: set, sequence_unfav_sites: set, low_rsasa_sites: set, non_editable_regions: set, editable_regions: set, df_file: str, output_html: str):
         self.input_fasta_file = input_fasta_file
         self.query_sequence = query_sequence
-        self.structure_unfav_sites=structure_unfav_sites,
-        self.sequence_unfav_sites=sequence_unfav_sites,
-        self.low_rsasa_sites=low_rsasa_sites,
+        self.ppi_sites = ppi_sites
+        self.intrachain_sites = intrachain_sites
+        self.hotspots_sites = hotspots_sites
+        self.sequence_unfav_sites=sequence_unfav_sites
+        self.low_rsasa_sites=low_rsasa_sites
+        self.non_editable_regions = non_editable_regions
         self.editable_regions = editable_regions
         self.df_file = df_file
         self.output_html = output_html
@@ -2168,17 +2171,20 @@ class prefilter_report:
         sequence_html = "\n".join(seq_lines)
 
         # --- editable regions summary ---
-        structure_unfav_sorted = sorted(self.structure_unfav_sites)
+        ppi_sites_sorted = sorted(self.ppi_sites)
+        intrachain_sites_sorted = sorted(self.intrachain_sites)
+        hotspots_sites_sorted = sorted(self.hotspots_sites)
         sequence_unfav_sorted = sorted(self.sequence_unfav_sites)
         low_rsasa_sorted = sorted(self.low_rsasa_sites)
         editable_sorted = sorted(self.editable_regions)
-        non_editable = sorted(set(range(1, len(self.query_sequence) + 1)) - self.editable_regions)
-        editable_str = self._compress_ranges(editable_sorted)
-        structure_unfav_str = self._compress_ranges(structure_unfav_sorted)
+        
+        ppi_sites_str = self._compress_ranges(ppi_sites_sorted)
+        intrachain_sites_str = self._compress_ranges(intrachain_sites_sorted)
+        hotspots_sites_str = self._compress_ranges(hotspots_sites_sorted)
         sequence_unfav_str = self._compress_ranges(sequence_unfav_sorted)
         low_rsasa_str = self._compress_ranges(low_rsasa_sorted)
-        non_editable_str = self._compress_ranges(non_editable)
-
+        editable_str = self._compress_ranges(editable_sorted)
+        
         # --- results table ---
         table_df = df.copy()
         table_df["Clash"] = table_df["Clash"].apply(
@@ -2244,26 +2250,30 @@ class prefilter_report:
     <h2>Editable Regions</h2>
     <div class="stats">
         <div class="stat"><span class="dot dot-editable"></span><strong>{len(editable_sorted)}</strong><span class="label-txt">editable positions</span></div>
-        <div class="stat"><span class="dot dot-other"></span><strong>{len(non_editable)}</strong><span class="label-txt">filtered out</span></div>
+        <div class="stat"><span class="dot dot-other"></span><strong>{len(self.non_editable_regions)}</strong><span class="label-txt">filtered out</span></div>
     </div>
     <div class="region-grid">
         <div class="region-box re-other">
-            <div class="region-label">Structural-unfavorable positions</div>
-            <div>{structure_unfav_str or '<span class="region-empty">None</span>'}</div>
+            <div class="region-label">PPI positions</div>
+            <div>{ppi_sites_str or '<span class="region-empty">None</span>'}</div>
         </div>
         <div class="region-box re-other">
-            <div class="region-label">Sequence-unfavorable positions</div>
+            <div class="region-label">Intra-chain interaction positions</div>
+            <div>{intrachain_sites_str or '<span class="region-empty">None</span>'}</div>
+        </div>
+        <div class="region-box re-other">
+            <div class="region-label">Hotspots related positions</div>
+            <div>{hotspots_sites_str or '<span class="region-empty">None</span>'}</div>
+        </div>
+        <div class="region-box re-other">
+            <div class="region-label">Sequence unfavorable positions</div>
             <div>{sequence_unfav_str or '<span class="region-empty">None</span>'}</div>
         </div>
         <div class="region-box re-other">
             <div class="region-label">Low-rSASA positions</div>
             <div>{low_rsasa_str or '<span class="region-empty">None</span>'}</div>
         </div>
-        <div class="region-box re-other">
-            <div class="region-label">Non-editable positions</div>
-            <div>{non_editable_str or '<span class="region-empty">None</span>'}</div>
-        </div>
-        <div class="region-box re-editable" style="grid-column: 1 / -1;">
+        <div class="region-box re-editable">
             <div class="region-label">Editable positions</div>
             <div>{editable_str or '<span class="region-empty">None</span>'}</div>
         </div>
@@ -2641,9 +2651,13 @@ class designer_report:
         self,
         input_fasta_file: str,
         wt_seq: str,
-        asn_sites: dict,
+        pos_list: List,
         designed_seqs: List[str],
         pos_probs_list: List[dict],
+        pos_probs_plot_list: List[dict],
+        wt_sequons_list: List[dict],
+        mut_sequons_list: List[dict],
+        states_list: List[dict],
         output_html: str,
     ):
         """
@@ -2652,16 +2666,24 @@ class designer_report:
         Args:
             input_fasta_file: Path to input FASTA file.
             wt_seq: Wild-type sequence (with X replaced by NP).
-            asn_sites: Dict mapping chain_id -> list of Asn positions, e.g. {"A": [10, 50]}.
+            pos_list: List of sampled-site collections, one entry per designed sequence.
             designed_seqs: List of designed sequences.
             pos_probs_list: List of dicts, each mapping position -> probability for a designed sequence.
+            pos_probs_plot_list: List of dicts used for sequence-view highlighting.
+            wt_sequons_list: List of dicts mapping site -> wild-type sequon.
+            mut_sequons_list: List of dicts mapping site -> mutant sequon.
+            states_list: List of dicts mapping site -> state.
             output_html: Output HTML file path.
         """
         self.input_fasta_file = input_fasta_file
         self.wt_seq = wt_seq
-        self.asn_sites = asn_sites
+        self.pos_list = pos_list or []
         self.designed_seqs = designed_seqs
-        self.pos_probs_list = pos_probs_list
+        self.pos_probs_list = pos_probs_list or []
+        self.pos_probs_plot_list = pos_probs_plot_list or []
+        self.wt_sequons_list = wt_sequons_list or []
+        self.mut_sequons_list = mut_sequons_list or []
+        self.states_list = states_list or []
         self.output_html = output_html
 
     def _format_seq_html(self, seq: str, pos_probs: dict = None, label: str = "Sequence", highlight_positions: set = None):
@@ -2675,8 +2697,8 @@ class designer_report:
             for i in range(start, end):
                 pos = i + 1
                 aa = seq[i]
-                if pos_probs and pos in pos_probs:
-                    prob = pos_probs[pos]
+                prob = self._get_site_value(pos_probs, pos, None) if pos_probs else None
+                if isinstance(prob, (int, float)):
                     prob_pct = f"{prob * 100:.1f}%"
                     css_class = "aa pos-hit" if prob >= 0.5 else "aa pos-miss"
                     chars.append(
@@ -2696,48 +2718,91 @@ class designer_report:
             seq_lines.append(pos_label + "".join(chars) + end_label)
         return "\n".join(seq_lines)
 
+    def _format_sampled_sites(self, sampled_sites):
+        """Format sampled sites for the per-design summary row."""
+        if sampled_sites is None:
+            return "None"
+        if isinstance(sampled_sites, dict):
+            parts = []
+            for chain, positions in sampled_sites.items():
+                positions_str = ", ".join(str(p) for p in sorted(positions))
+                parts.append(f"Chain {chain}: {positions_str}" if positions_str else f"Chain {chain}: None")
+            return "; ".join(parts) if parts else "None"
+        if isinstance(sampled_sites, (list, tuple, set)):
+            return ", ".join(str(p) for p in sorted(sampled_sites)) if sampled_sites else "None"
+        return str(sampled_sites)
+
+    def _get_list_dict(self, values, idx):
+        if idx < len(values) and isinstance(values[idx], dict):
+            return values[idx]
+        return {}
+
+    def _site_sort_key(self, site):
+        try:
+            return (0, int(site))
+        except (TypeError, ValueError):
+            return (1, str(site))
+
+    def _get_site_value(self, values, site, default="-"):
+        if site in values:
+            return values[site]
+        site_str = str(site)
+        if site_str in values:
+            return values[site_str]
+        try:
+            site_int = int(site)
+        except (TypeError, ValueError):
+            return default
+        return values.get(site_int, default)
+
     def generate_designer_report(self):
         """Generate a self-contained HTML report for halludesign_esm results."""
         from datetime import datetime
 
-        # Collect all Asn positions across chains
-        all_asn_positions = set()
-        for chain_id, positions in self.asn_sites.items():
-            all_asn_positions.update(positions)
-        asn_sites_str = "; ".join(
-            f"Chain {chain}: {', '.join(str(p) for p in sorted(positions))}"
-            for chain, positions in self.asn_sites.items()
-        )
-
         # WT sequence HTML
-        wt_seq_html = self._format_seq_html(self.wt_seq, highlight_positions=all_asn_positions, label="WT Sequence")
+        wt_seq_html = self._format_seq_html(self.wt_seq, label="WT Sequence")
 
         # Designed sequences HTML
         designed_cards = []
-        for idx, (d_seq, d_probs) in enumerate(zip(self.designed_seqs, self.pos_probs_list)):
-            seq_html = self._format_seq_html(d_seq, pos_probs=d_probs, label=f"Design {idx + 1}")
-
-            # Mutation summary
-            mutations = []
-            for i, (wt_aa, d_aa) in enumerate(zip(self.wt_seq, d_seq)):
-                if wt_aa != d_aa:
-                    mutations.append(f"{wt_aa}{i+1}{d_aa}")
-            mut_str = ", ".join(mutations) if mutations else "None"
+        for idx, d_seq in enumerate(self.designed_seqs):
+            d_probs = self.pos_probs_list[idx] if idx < len(self.pos_probs_list) else {}
+            d_probs = d_probs or {}
+            plot_probs = self.pos_probs_plot_list[idx] if idx < len(self.pos_probs_plot_list) else {}
+            plot_probs = plot_probs or {}
+            seq_html = self._format_seq_html(d_seq, pos_probs=plot_probs, label=f"Design {idx + 1}")
+            sampled_sites = self.pos_list[idx] if idx < len(self.pos_list) else None
+            sampled_sites_str = self._format_sampled_sites(sampled_sites)
+            wt_sequons = self._get_list_dict(self.wt_sequons_list, idx)
+            mut_sequons = self._get_list_dict(self.mut_sequons_list, idx)
+            states = self._get_list_dict(self.states_list, idx)
 
             # Prob summary table
             prob_rows = ""
-            for pos in sorted(d_probs.keys()):
-                prob = d_probs[pos]
-                motif = d_seq[pos-1:pos+2] if pos-1+3 <= len(d_seq) else d_seq[pos-1:]
-                pred = "Positive" if prob >= 0.5 else "Negative"
-                prob_rows += f"<tr><td>{pos}</td><td>{motif}</td><td>{prob:.4f}</td><td>{pred}</td></tr>\n"
+            table_sites = set(d_probs.keys()) | set(wt_sequons.keys()) | set(mut_sequons.keys()) | set(states.keys())
+            for site in sorted(table_sites, key=self._site_sort_key):
+                prob = self._get_site_value(d_probs, site, None)
+                wt_sequon = self._get_site_value(wt_sequons, site)
+                mut_sequon = self._get_site_value(mut_sequons, site)
+                state = self._get_site_value(states, site)
+                prob_str = f"{prob:.4f}" if isinstance(prob, (int, float)) else "-"
+                pred = "Positive" if isinstance(prob, (int, float)) and prob >= 0.5 else "Negative" if isinstance(prob, (int, float)) else "-"
+                prob_rows += (
+                    f"<tr><td>{escape(str(site))}</td>"
+                    f"<td>{escape(str(wt_sequon))}</td>"
+                    f"<td>{escape(str(mut_sequon))}</td>"
+                    f"<td>{escape(str(state))}</td>"
+                    f"<td>{prob_str}</td>"
+                    f"<td>{pred}</td></tr>\n"
+                )
+            if not prob_rows:
+                prob_rows = '<tr><td colspan="6">No glycosylation predictions</td></tr>\n'
 
             designed_cards.append(f"""
 <div class="card">
     <h2>Design {idx + 1}</h2>
     <div class="info-grid" style="margin-bottom:14px;">
-        <div class="label">Mutations</div>
-        <div class="value">{mut_str}</div>
+        <div class="label">Sampled Sites</div>
+        <div class="value">{sampled_sites_str}</div>
     </div>
     <div class="seq-viewer">
 {seq_html}
@@ -2750,7 +2815,7 @@ class designer_report:
     <h3>Glycosylation Predictions</h3>
     <div class="table-wrap">
         <table class="data-table">
-            <thead><tr><th>Position</th><th>Motif</th><th>Probability</th><th>Prediction</th></tr></thead>
+            <thead><tr><th>Site</th><th>WT Sequon</th><th>Mut Sequon</th><th>State</th><th>Probability</th><th>Prediction</th></tr></thead>
             <tbody>{prob_rows}</tbody>
         </table>
     </div>
@@ -2789,8 +2854,6 @@ class designer_report:
         <div class="value">{self.input_fasta_file}</div>
         <div class="label">WT Sequence Length</div>
         <div class="value">{len(self.wt_seq)} residues</div>
-        <div class="label">Asn Sites</div>
-        <div class="value">{asn_sites_str}</div>
         <div class="label">Number of Designs</div>
         <div class="value">{len(self.designed_seqs)}</div>
     </div>
@@ -2801,16 +2864,12 @@ class designer_report:
     <div class="seq-viewer">
 {wt_seq_html}
     </div>
-    <div class="legend">
-        <div class="legend-item"><span class="legend-swatch swatch-asn"></span> Asn glycosylation site</div>
-        <div class="legend-item"><span class="legend-swatch swatch-default"></span> Other residues</div>
-    </div>
 </div>
 
 {designed_html}
 
 <footer>
-    Generated by SugarSwitch &bull; Hallucination-designer Pipeline
+    Generated by SugarSwitch &bull; Designer Pipeline
 </footer>
 
 </div>
