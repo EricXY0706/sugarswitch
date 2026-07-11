@@ -60,8 +60,10 @@
          --chain_id "CHAIN_ID" \
          --functional_hotspots "[1,2,3,'4-10']" \ # This has to be a string with quotation marks
          --enable_glycan_grafting True
-         --num_designs 3 \
-         --num_gly_sites 5 \
+         --num_patterns 3 \ # This is the number of different combinations of sites
+         --num_candidates_per_pattern 10 \
+         --num_designs_per_pattern 1 \ # Design and filter 1 out of 10 sequences per combination
+         --num_gly_sites 3 \ # This is the number of glyco site on each designed sequence
          --add_pll_loss True \ # This makes the sequence more natural but significantly increases computational overhead
          --predict_structure True \ # Whether to predict the structure of designed glycoprotein
       ```
