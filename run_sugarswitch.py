@@ -44,16 +44,18 @@ def ssbuilder(input_fasta_file, out_dir):
 @click.option("--chain_id", type=str, help="Chain ID to be glycosyalted", required=True)
 @click.option("--functional_hotspots", default="[]", type=str, help="List of positions to avoid modification in string format, e.g. '[1,2,3,'4-10']' ", required=False)
 @click.option("--enable_glycan_grafting", default=True, type=bool, help="Whether enables glycan grafting to access cavity volumn to hold glycans", required=False)
-@click.option("--num_designs", default=1, type=int, help="number of designs to generate", required=False)
+@click.option("--num_patterns", default=1, type=int, help="number of combinations of sites", required=False)
+@click.option("--num_candidates_per_pattern", default=10, type=int, help="number of candidates per combination of sites", required=False)
+@click.option("--num_designs_per_pattern", default=1, type=int, help="number of final designs per combination of sites", required=False)
 @click.option("--num_gly_sites", default=3, type=int, help="number of glycosylation sites to design", required=False)
 @click.option("--add_pll_loss", default=True, type=bool, help="whether add pseudo log likelihood loss", required=False)
 @click.option("--predict_structure", default=True, type=bool, help="whether predict designed glycoprotein structure", required=False)
-def designer(input_fasta_file, input_structure_file, out_dir, name, chain_id, functional_hotspots, num_designs, num_gly_sites, add_pll_loss, enable_glycan_grafting, predict_structure):
+def designer(input_fasta_file, input_structure_file, out_dir, name, chain_id, functional_hotspots, num_patterns, num_candidates_per_pattern, num_designs_per_pattern, num_gly_sites, add_pll_loss, enable_glycan_grafting, predict_structure):
     
     from src.prefilters import run_prefilters
     from src.designers import halludesign_esm
     
-    structure_unfav_sites, sequence_unfav_sites, low_rsasa_sites, fav_sites = run_prefilters(
+    conservation_df, coupling_stength, interaction_dict, rsasa_index_dict = run_prefilters(
         input_fasta_file=input_fasta_file,
         input_structure_file=input_structure_file,
         output_dir=out_dir, 
@@ -65,13 +67,15 @@ def designer(input_fasta_file, input_structure_file, out_dir, name, chain_id, fu
     halludesign_esm(
         input_fasta_file=input_fasta_file,
         output_dir=out_dir,
-        structure_unfav_sites=structure_unfav_sites,
-        sequence_unfav_sites=sequence_unfav_sites,
-        low_rsasa_sites=low_rsasa_sites,
-        fav_sites=fav_sites,
+        conservation_df=conservation_df,
+        coupling_stength=coupling_stength,
+        interaction_dict=interaction_dict,
+        rsasa_index_dict=rsasa_index_dict,
         name=name,
         chain_id=chain_id,
-        num_designs=num_designs,
+        num_patterns=num_patterns,
+        num_candidates_per_pattern=num_candidates_per_pattern,
+        num_designs_per_pattern=num_designs_per_pattern,
         num_gly_sites=num_gly_sites,
         add_pll_loss=add_pll_loss,
         predict_structure=predict_structure,
