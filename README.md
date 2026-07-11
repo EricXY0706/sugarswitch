@@ -32,9 +32,9 @@
       # An example
 
       python run_sugarswitch.py prefilter \
-         --input_fasta_file "input_fasta_file" \
-         --input_structure_file "optinal_input_structure_file" \
-         --out_dir "output_dir" \
+         --input_fasta_file "path/to/input_fasta_file" \
+         --input_structure_file "path/to/optinal_input_structure_file" \
+         --out_dir "path/to/output_dir" \
          --chain_id "CHAIN_ID" \
          --functional_hotspots "[1,2,3,'4-10']" \ # This has to be a string with quotation marks
          --enable_glycan_grafting True \ # Whether to graft a glycan onto the protein surface
@@ -54,9 +54,9 @@
       # An example
 
       python run_sugarswitch.py pipeline \
-         --input_fasta_file "input_fasta_file" \
-         --input_structure_file "optinal_input_structure_file" \
-         --out_dir "output_dir" \
+         --input_fasta_file "path/to/input_fasta_file" \
+         --input_structure_file "path/to/optinal_input_structure_file" \
+         --out_dir "path/to/output_dir" \
          --chain_id "CHAIN_ID" \
          --functional_hotspots "[1,2,3,'4-10']" \ # This has to be a string with quotation marks
          --enable_glycan_grafting True
