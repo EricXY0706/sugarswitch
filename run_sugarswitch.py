@@ -46,7 +46,7 @@ def ssbuilder(input_fasta_file, out_dir):
 @click.option("--enable_glycan_grafting", default=True, type=bool, help="Whether enables glycan grafting to access cavity volumn to hold glycans", required=False)
 @click.option("--num_patterns", default=1, type=int, help="number of combinations of sites", required=False)
 @click.option("--num_candidates_per_pattern", default=10, type=int, help="number of candidates per combination of sites", required=False)
-@click.option("--num_designs_per_pattern", default=1, type=int, help="number of final designs per combination of sites", required=False)
+@click.option("--num_designs_per_pattern", default=1, type=int, help="number of final designs out of candidates per combination of sites", required=False)
 @click.option("--num_gly_sites", default=3, type=int, help="number of glycosylation sites to design", required=False)
 @click.option("--add_pll_loss", default=True, type=bool, help="whether add pseudo log likelihood loss", required=False)
 @click.option("--predict_structure", default=True, type=bool, help="whether predict designed glycoprotein structure", required=False)
