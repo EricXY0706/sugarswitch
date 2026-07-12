@@ -78,6 +78,7 @@ def prepare_seq(
             sampled_sites = sorted(sampled_sites, reverse=True)
             
             for i, s in enumerate(sampled_sites):
+                gly_site_seqid = len(sampled_sites) - 1 - i
                 seq_to_design, wt_sequon, mut_sequon, state = add_single_mutation(
                     chain_id=chain_id,
                     site=s, 
@@ -90,8 +91,9 @@ def prepare_seq(
                     N_plus_1_aa=wt_seq[s] if s <= (len(wt_seq) - 1) else "X",
                     N_plus_2_aa=wt_seq[s+1] if s <= (len(wt_seq) - 2) else "X",
                     trial_times=trial_times,
-                    gly_site_seqid=i,
+                    gly_site_seqid=gly_site_seqid,
                 )
+                print(s, wt_sequon, mut_sequon, state, flush=True)
                 wt_sequons[s] = wt_sequon
                 mut_sequons[s] = mut_sequon
                 states[s] = state
@@ -186,13 +188,11 @@ def hallucinate(
     pll_weight: float = 1.0,
     device: torch.device = None,
 ) -> str:
-    """Hallucinate amino-acids for `X` in `sequence` so that classifier predicts glycosylation for candidate positions.
+    """
+    Hallucinate amino acids only for positions equal to `X`.
 
-    - Only tokens equal to 'X' are optimized. Other tokens are fixed.
-    - Candidate positions are located by the motif `N.[ST]` (same as original design).
-    - The model is evaluated with repeated inputs (one batch item per candidate position), providing `pos` indices.
-
-    Returns the designed sequence (string of same length as input).
+    Non-X residues are fixed, including the middle residue in N[^P][ST]
+    motifs if it is not X.
     """
     set_seed(seed=int(time.time()))
     sequence = sequence.strip()
@@ -203,15 +203,19 @@ def hallucinate(
     A = len(ESM_TOKENS)
 
     x_positions = {i for i, aa in enumerate(sequence) if aa == "X"}
-    motif_matches = [m.start() for m in re.finditer(r"N[^P][ST]", sequence)]
-    p_positions = {m + 1 for m in motif_matches if m + 1 < L}
-    opt_positions = sorted(list(x_positions.union(p_positions)))
+    opt_positions = sorted(x_positions)
 
     if len(opt_positions) == 0:
-        print("No positions (X or NX[ST] middle) to optimize; returning input sequence.")
         return sequence
 
-    natural_aas = ["A","R","N","D","C","Q","E","G","H","I","L","K","M","F","S","T","W","Y","V"]
+    candidate_positions = [m.start() for m in re.finditer(r"N[^P][ST]", sequence)]
+    if len(candidate_positions) == 0:
+        return sequence
+
+    pos_ids = [p + 1 for p in candidate_positions]
+
+    natural_aas = ["A", "R", "N", "D", "C", "Q", "E", "G", "H", "I",
+                   "L", "K", "M", "F", "S", "T", "W", "Y", "V"]
     token_keys = list(ESM_TOKENS.keys())
     allowed_idx = [ESM_TOKENS[a] for a in natural_aas if a in ESM_TOKENS]
     K = len(allowed_idx)
@@ -228,17 +232,13 @@ def hallucinate(
 
     with torch.no_grad():
         embedding_weight = model.esm.embeddings.word_embeddings.weight
-        aa_token_ids = torch.tensor([tokenizer._convert_token_to_id(aa) for aa in token_keys], device=device)
-        E = embedding_weight[aa_token_ids]  # [A, D]
+        aa_token_ids = torch.tensor(
+            [tokenizer._convert_token_to_id(aa) for aa in token_keys],
+            device=device,
+        )
+        E = embedding_weight[aa_token_ids]
         mask_token_id = tokenizer.mask_token_id
         mask_embed = embedding_weight[mask_token_id]
-
-    candidate_positions = [m.start() for m in re.finditer(r"N[^P][ST]", sequence)]
-    if len(candidate_positions) == 0:
-        print("No NXS/T motifs found; returning input sequence.")
-        return sequence
-
-    pos_ids = [p + 1 for p in candidate_positions]
 
     for step in range(num_steps):
         optimizer.zero_grad()
@@ -250,15 +250,18 @@ def hallucinate(
             full[allowed_idx] = p
             seq_logits[seq_pos] = full
 
-        seq_probs = torch.softmax(seq_logits / temperature, dim=-1).to(E.dtype)  # [L, A]
-        seq_embeds = seq_probs @ E  # [L, D]
+        seq_probs = torch.softmax(seq_logits / temperature, dim=-1).to(E.dtype)
+        seq_embeds = seq_probs @ E
 
         cls_id = tokenizer.cls_token_id
         eos_id = tokenizer.eos_token_id
         cls_embed = embedding_weight[cls_id].unsqueeze(0)
         eos_embed = embedding_weight[eos_id].unsqueeze(0)
 
-        inputs_embeds_single = torch.cat([cls_embed, seq_embeds, eos_embed], dim=0).unsqueeze(0)  # [1, L+2, D]
+        inputs_embeds_single = torch.cat(
+            [cls_embed, seq_embeds, eos_embed],
+            dim=0,
+        ).unsqueeze(0)
 
         batch_size = len(pos_ids)
         inputs_embeds = inputs_embeds_single.repeat(batch_size, 1, 1)
@@ -272,48 +275,55 @@ def hallucinate(
         except Exception:
             pass
 
-        outputs = model(inputs_embeds=inputs_embeds, attention_mask=attention_mask, pos=pos_tensor)
-        logits = outputs.logits  # [batch_size, num_labels]
+        outputs = model(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            pos=pos_tensor,
+        )
+        logits = outputs.logits
         probs = torch.softmax(logits, dim=-1)
 
         gly_loss = -torch.log(probs[:, 1] + 1e-8).mean()
-        
-        if add_pll_loss:
-            if len(opt_positions) > 0 and pll_weight > 0.0:
-                P = len(opt_positions)
-                inputs_embeds_batch = inputs_embeds.repeat(P, 1, 1)
+        loss = gly_loss
 
-                masked_indices = torch.tensor([pos + 1 for pos in opt_positions], device=device, dtype=torch.long)
+        if add_pll_loss and pll_weight > 0.0:
+            P = len(opt_positions)
+            inputs_embeds_batch = inputs_embeds.repeat(P, 1, 1)
 
-                for b in range(P):
-                    inputs_embeds_batch[b, masked_indices[b], :] = mask_embed.to(inputs_embeds_batch.dtype)
+            masked_indices = torch.tensor(
+                [pos + 1 for pos in opt_positions],
+                device=device,
+                dtype=torch.long,
+            )
 
-                attention_mask_batch = attention_mask.repeat(P, 1)
+            for b in range(P):
+                inputs_embeds_batch[b, masked_indices[b], :] = mask_embed.to(
+                    inputs_embeds_batch.dtype
+                )
 
-                lm_outputs = masked_lm(inputs_embeds=inputs_embeds_batch, attention_mask=attention_mask_batch)
-                lm_logits = lm_outputs.logits  # [P, L+2, vocab_size]
+            attention_mask_batch = attention_mask.repeat(P, 1)
 
-                batch_idx = torch.arange(P, device=device)
-                logits_at_mask = lm_logits[batch_idx, masked_indices, :]
+            lm_outputs = masked_lm(
+                inputs_embeds=inputs_embeds_batch,
+                attention_mask=attention_mask_batch,
+            )
+            lm_logits = lm_outputs.logits
 
-                logits_at_mask_reordered = logits_at_mask[:, aa_token_ids]
-                lm_log_probs = torch.log_softmax(logits_at_mask_reordered, dim=-1)
+            batch_idx = torch.arange(P, device=device)
+            logits_at_mask = lm_logits[batch_idx, masked_indices, :]
 
-                seq_probs_opt = seq_probs[opt_positions, :]
+            logits_at_mask_reordered = logits_at_mask[:, aa_token_ids]
+            lm_log_probs = torch.log_softmax(logits_at_mask_reordered, dim=-1)
 
-                pll_per_pos = - (seq_probs_opt * lm_log_probs).sum(dim=-1)
-                pll_loss = pll_per_pos.mean()
+            seq_probs_opt = seq_probs[opt_positions, :]
+            pll_per_pos = -(seq_probs_opt * lm_log_probs).sum(dim=-1)
+            pll_loss = pll_per_pos.mean()
 
-                loss = gly_loss + pll_weight * pll_loss
-        else:
-            loss = gly_loss
+            loss = gly_loss + pll_weight * pll_loss
 
         loss.backward()
         optimizer.step()
 
-        # if (step + 1) % 10 == 0 or step == 0:
-        #     print(f"step {step + 1} | GLY loss {gly_loss.item():.4f} | PLL loss {pll_loss.item():.4f} | total loss {loss.item():.4f}", flush=True)
-            
     with torch.no_grad():
         final_seq_logits = fixed_logits.clone()
         for j, seq_pos in enumerate(opt_positions):
@@ -321,6 +331,7 @@ def hallucinate(
             full = torch.full((A,), eps, device=device, dtype=p.dtype)
             full[allowed_idx] = p
             final_seq_logits[seq_pos] = full
+
         final_probs = torch.softmax(final_seq_logits, dim=-1)
         final_idx = torch.argmax(final_probs, dim=-1).cpu().tolist()
 
@@ -441,7 +452,7 @@ def halludesign_esm(
     name: str,
     chain_id: str = "A",
     num_patterns: int = 1,
-    num_candidates_per_pattern: int = 10,
+    num_candidates_per_pattern: int = 3,
     num_designs_per_pattern: int = 1,
     num_gly_sites: int = 3,
     n_steps: int = 100,
@@ -479,117 +490,115 @@ def halludesign_esm(
 
     for i in range(num_patterns):
         trial_times = [0] * num_gly_sites
-
-        seq_to_design, asn_sites, seqs, wt_seq, sampled_sites, wt_sequons, mut_sequons, states = prepare_seq(
-            input_fasta_file=input_fasta_file,
-            wt_structure_file=wt_structure_file,
-            output_dir=output_dir,
-            conservation_df=conservation_df,
-            coupling_stength=coupling_stength,
-            interaction_dict=interaction_dict,
-            rsasa_index_dict=rsasa_index_dict,
-            name=filename,
-            chain_id=chain_id,
-            num_gly_sites=num_gly_sites,
-            trial_times=trial_times,
-            combination_id=i,
-        )
-
-        natural_asn_sites = [
-            m.start() + 1
-            for m in re.finditer(r"N[^P][TS]", wt_seq)
-        ]
-
-        pattern_candidates = []
-
-        for candidate_id in range(num_candidates_per_pattern):
-            designed_seq = hallucinate(
-                model=model,
-                masked_lm=masked_llm,
-                tokenizer=tokenizer,
-                sequence=seq_to_design,
-                num_steps=n_steps,
-                lr=learning_rate,
-                temperature=temperature,
-                add_pll_loss=add_pll_loss,
-                pll_weight=pll_weight,
-                device=device,
+        selected_candidates = []
+        top_pos_probs = [{0:0.}]
+        while not all(v > 0.5 for pos_prob in top_pos_probs for v in pos_prob.values()):
+            seq_to_design, asn_sites, seqs, wt_seq, sampled_sites, wt_sequons, mut_sequons, states = prepare_seq(
+                input_fasta_file=input_fasta_file,
+                wt_structure_file=wt_structure_file,
+                output_dir=output_dir,
+                conservation_df=conservation_df,
+                coupling_stength=coupling_stength,
+                interaction_dict=interaction_dict,
+                rsasa_index_dict=rsasa_index_dict,
+                name=filename,
+                chain_id=chain_id,
+                num_gly_sites=num_gly_sites,
+                trial_times=trial_times,
+                combination_id=i,
             )
 
-            designed_asn_sites = [
-                s
-                for s in [m.start() + 1 for m in re.finditer(r"N[^P][TS]", designed_seq)]
-                if s not in natural_asn_sites
+            natural_asn_sites = [
+                m.start() + 1
+                for m in re.finditer(r"N[^P][TS]", wt_seq)
             ]
 
-            gc.collect()
-            torch.cuda.empty_cache()
-            torch.cuda.reset_max_memory_allocated()
+            pattern_candidates = []
 
-            pos_probs = predict_seq(
-                model=model,
-                tokenizer=tokenizer,
-                sequence=designed_seq,
-                batch_size=8,
-            )
-
-            pos_prob_sum = float(np.sum(list(pos_probs.values()))) if pos_probs else 0.0
-
-            pattern_candidates.append({
-                "designed_seq": designed_seq,
-                "designed_asn_sites": designed_asn_sites,
-                "pos_probs": pos_probs,
-                "pos_prob_sum": pos_prob_sum,
-                "candidate_id": candidate_id,
-            })
-
-        pattern_candidates = sorted(
-            pattern_candidates,
-            key=lambda x: x["pos_prob_sum"],
-            reverse=True,
-        )
-
-        selected_candidates = pattern_candidates[:num_designs_per_pattern]
-
-        for selected_rank, candidate in enumerate(selected_candidates):
-            designed_seq = candidate["designed_seq"]
-            designed_asn_sites = candidate["designed_asn_sites"]
-            pos_probs = candidate["pos_probs"]
-
-            designed_seqs_list.append(designed_seq)
-            pos_probs_list.append({
-                s: p
-                for s, p in zip(states.keys(), pos_probs.values())
-            })
-            pos_probs_plot_list.append(pos_probs)
-            sampled_sites_list.append(sampled_sites)
-            wt_sequons_list.append({
-                s: seq
-                for s, seq in zip(states.keys(), wt_sequons.values())
-            })
-            mut_sequons_list.append({
-                s: designed_seq[pos - 2:min(pos - 2 + len(mut_sequon), len(designed_seq))]
-                for s, pos, mut_sequon in zip(states.keys(), designed_asn_sites, mut_sequons.values())
-            })
-            states_list.append(states)
-
-            if predict_structure:
-                suffix = (
-                    f"_pattern_{i + 1:0{pattern_digits}d}"
-                    f"_design_{selected_rank + 1:0{design_digits}d}"
+            for candidate_id in range(num_candidates_per_pattern):
+                designed_seq = hallucinate(
+                    model=model,
+                    masked_lm=masked_llm,
+                    tokenizer=tokenizer,
+                    sequence=seq_to_design,
+                    num_steps=n_steps,
+                    lr=learning_rate,
+                    temperature=temperature,
+                    add_pll_loss=add_pll_loss,
+                    pll_weight=pll_weight,
+                    device=device,
                 )
-                structure_design_inputs.append({
-                    "suffix": suffix,
-                    "seqs": seqs.copy(),
+
+                designed_asn_sites = [
+                    s
+                    for s in [m.start() + 1 for m in re.finditer(r"N[^P][TS]", designed_seq)]
+                    if s not in natural_asn_sites
+                ]
+
+                gc.collect()
+                torch.cuda.empty_cache()
+                torch.cuda.reset_max_memory_allocated()
+
+                pos_probs = predict_seq(
+                    model=model,
+                    tokenizer=tokenizer,
+                    sequence=designed_seq,
+                    batch_size=8,
+                )
+
+                pos_prob_sum = float(np.sum(list(pos_probs.values()))) if pos_probs else 0.0
+
+                pattern_candidates.append({
                     "designed_seq": designed_seq,
+                    "designed_asn_sites": designed_asn_sites,
+                    "pos_probs": pos_probs,
+                    "pos_prob_sum": pos_prob_sum,
+                    "candidate_id": candidate_id,
                 })
 
-    if predict_structure:
-        _predict_designed_structures(
-            design_inputs=structure_design_inputs,
-            output_dir=output_dir,
-            filename=filename,
-        )
+            pattern_candidates = sorted(
+                pattern_candidates,
+                key=lambda x: x["pos_prob_sum"],
+                reverse=True,
+            )
+
+            selected_candidates = pattern_candidates[:num_designs_per_pattern]
+            top_pos_probs = [candidate["pos_probs"] for candidate in selected_candidates]
+            if any(v <= 0.5 for pos_prob in top_pos_probs for v in pos_prob.values()):
+                trial_times = [t + 1 if v <= 0.5 else t for t, v in zip(trial_times, top_pos_probs[0].values())]
+            else:
+                for selected_rank, candidate in enumerate(selected_candidates):
+                    designed_seq = candidate["designed_seq"]
+                    designed_asn_sites = candidate["designed_asn_sites"]
+                    pos_probs = candidate["pos_probs"]
+
+                    designed_seqs_list.append(designed_seq)
+                    pos_probs_list.append({
+                        s: p
+                        for s, p in zip(states.keys(), pos_probs.values())
+                    })
+                    pos_probs_plot_list.append(pos_probs)
+                    sampled_sites_list.append(sampled_sites)
+                    wt_sequons_list.append({
+                        s: seq
+                        for s, seq in zip(states.keys(), wt_sequons.values())
+                    })
+                    mut_sequons_list.append({
+                        s: designed_seq[pos - 2:min(pos - 2 + len(mut_sequon), len(designed_seq))]
+                        for s, pos, mut_sequon in zip(states.keys(), designed_asn_sites, mut_sequons.values())
+                    })
+                    states_list.append(states)
+
+                    if predict_structure:
+                        suffix = (
+                            f"_pattern_{i + 1:0{pattern_digits}d}"
+                            f"_design_{selected_rank + 1:0{design_digits}d}"
+                        )
+                        structure_design_inputs.append({
+                            "suffix": suffix,
+                            "seqs": seqs.copy(),
+                            "designed_seq": designed_seq,
+                        })
 
     reporter = designer_report(
         input_fasta_file=input_fasta_file,
@@ -604,6 +613,13 @@ def halludesign_esm(
         output_html=f"{output_dir}/{filename}_designer_report.html",
     )
     reporter.generate_designer_report()
+    
+    if predict_structure:
+        _predict_designed_structures(
+            design_inputs=structure_design_inputs,
+            output_dir=output_dir,
+            filename=filename,
+        )
 
     gc.collect()
     torch.cuda.empty_cache()
