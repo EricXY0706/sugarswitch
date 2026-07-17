@@ -19,11 +19,10 @@ pipeline_configs = {
 
 basic_configs = {**pipeline_configs}
 ranker_configs = {
-    "rSASA_weight": 1.0,
-    "ddG_weight": 0.3,
-    "dTm_weight": 0.3,
-    "ddG_NXST_weight": 0.2,
-    "dTm_NXST_weight": 0.2,
-    "MutScore_weight": 0.3,
-    "MutScore_NXST_weight": 0.2,
+    "ddG_weight": 0.0196,
+    "dTm_weight": 0.0482,
+    "ddG_NXST_weight": 0.0824,
+    "dTm_NXST_weight": 0.1372,
+    "MutScore_weight": 0.1799,
+    "MutScore_NXST_weight": 0.5326,
 }
