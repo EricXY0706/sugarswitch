@@ -1931,7 +1931,6 @@ class ClashCheck:
 class BordaCount:
     def __init__(
         self,
-        rSASA_weight: float = 1.0,
         ddG_weight: float = 0.5,
         dTm_weight: float = 0.5,
         ddG_NXST_weight: float = 0.3,
@@ -1944,7 +1943,6 @@ class BordaCount:
         """
 
         self.weights = {
-            "rSASA": rSASA_weight,
             "ddG": ddG_weight,
             "dTm": dTm_weight,
             "ddG_NXST": ddG_NXST_weight,
@@ -1953,7 +1951,6 @@ class BordaCount:
             "MutScore_NXST": MutScore_NXST_weight,
         }
         self.higher_is_better = {
-            "rSASA": True,
             "ddG": True,
             "dTm": True,
             "ddG_NXST": True,
@@ -2001,8 +1998,8 @@ class prefilter_report:
         self.ppi_sites = ppi_sites
         self.intrachain_sites = intrachain_sites
         self.hotspots_sites = hotspots_sites
-        self.sequence_unfav_sites=sequence_unfav_sites
-        self.low_rsasa_sites=low_rsasa_sites
+        self.sequence_unfav_sites = sequence_unfav_sites
+        self.low_rsasa_sites = low_rsasa_sites
         self.non_editable_regions = non_editable_regions
         self.editable_regions = editable_regions
         self.df_file = df_file
@@ -2015,7 +2012,6 @@ class prefilter_report:
 
         df = pd.read_csv(self.df_file)
         higher_is_better = {
-            "rSASA": True,
             "ddG": True,
             "dTm": True,
             "ddG_NXST": True,
@@ -2094,7 +2090,6 @@ class prefilter_report:
 
         df = pd.read_csv(df_file)
         higher_is_better = {
-            "rSASA": True,
             "ddG": True,
             "dTm": True,
             "ddG_NXST": True,
