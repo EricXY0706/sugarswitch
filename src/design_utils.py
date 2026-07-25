@@ -43,6 +43,7 @@ def sample_sites(
     wt_seq: str,
     num_sites_per_comb: int = 3,
     combination_id: int = 0,
+    return_num_combinations: bool = False,
 ):
     df = pd.read_csv(scoring_df)
 
@@ -126,6 +127,8 @@ def sample_sites(
 
     sampled_sites = sites_combs[min(combination_id, len(sites_combs) - 1)]
 
+    if return_num_combinations:
+        return sampled_sites, len(sites_combs)
     return sampled_sites
 
 def report_site_state(
@@ -328,19 +331,23 @@ def add_single_mutation(
     
     state = report_four_sites_state(
         chain_id=chain_id,
-        center_site=site, 
-        wt_seq=wt_seq, 
+        center_site=site,
+        wt_seq=wt_seq,
         conservation_df=conservation_df,
         coupling_stength=coupling_stength,
         interaction_dict=interaction_dict,
         rsasa_index_dict=rsasa_index_dict,
     )
-    
+
+    motifs = GLY_MOTIFS[state]
+    motif = motifs[min(len(motifs) - 1, trial_times[gly_site_seqid])]
+    n_offset = (site - 1 - max(site - 2, 0)) + (1 if motif.startswith("PX") else 0)
+
     wt_seq = list(wt_seq)
     mut_seq = "".join(
         wt_seq[:max(site - 2, 0)]
-        + list(GLY_MOTIFS[state][min(len(GLY_MOTIFS[state]) - 1, trial_times[gly_site_seqid])])
+        + list(motif)
         + wt_seq[site + 2:]
     )
-    
-    return mut_seq, "".join(wt_seq[max(site - 2, 0):site + 2]), "".join(list(GLY_MOTIFS[state][min(len(GLY_MOTIFS[state]), trial_times[gly_site_seqid])])), state
+
+    return mut_seq, "".join(wt_seq[max(site - 2, 0):site + 2]), motif, state, n_offset, len(motifs)

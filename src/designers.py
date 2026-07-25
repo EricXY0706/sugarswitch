@@ -21,6 +21,7 @@ from src.util import *
 
 eps = -1e9
 BASE_MODEL_NAME = "facebook/esm2_t30_150M_UR50D"
+MASKED_LLM_MODEL_NAME = "facebook/esm2_t30_150M_UR50D"
 
 LORA_MODEL_NAME = "./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint"
 HUMAN_LORA_MODEL_NAME = "./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint-human"
@@ -53,6 +54,9 @@ def prepare_seq(
     wt_sequons = {}
     mut_sequons = {}
     states = {}
+    designed_sites = {}
+    max_trials = [0] * num_gly_sites
+    num_combinations = 0
     
     count_l = count_r = 0
     for rec in SeqIO.parse(input_fasta_file, "fasta"):
@@ -63,7 +67,7 @@ def prepare_seq(
             seq = str(rec.seq)
             wt_seq = seq
             seq_to_design = seq
-            sampled_sites = sample_sites(
+            sampled_sites, num_combinations = sample_sites(
                 structure_file=wt_structure_file,
                 scoring_df=f"{output_dir}/{filename}_prefilter_result.csv",
                 conservation_df=conservation_df,
@@ -74,15 +78,18 @@ def prepare_seq(
                 wt_seq=wt_seq,
                 num_sites_per_comb=num_gly_sites,
                 combination_id=combination_id,
+                return_num_combinations=True,
             )
             sampled_sites = sorted(sampled_sites, reverse=True)
             
             for i, s in enumerate(sampled_sites):
                 gly_site_seqid = len(sampled_sites) - 1 - i
-                seq_to_design, wt_sequon, mut_sequon, state = add_single_mutation(
+                prev_len = len(seq_to_design)
+                window_start = max(s - 2, 0)
+                seq_to_design, wt_sequon, mut_sequon, state, n_offset, num_motifs = add_single_mutation(
                     chain_id=chain_id,
-                    site=s, 
-                    wt_seq=seq_to_design, 
+                    site=s,
+                    wt_seq=seq_to_design,
                     conservation_df=conservation_df,
                     coupling_stength=coupling_stength,
                     interaction_dict=interaction_dict,
@@ -93,7 +100,14 @@ def prepare_seq(
                     trial_times=trial_times,
                     gly_site_seqid=gly_site_seqid,
                 )
-                print(s, wt_sequon, mut_sequon, state, flush=True)
+                # Splicing this motif shifts every already-recorded (downstream,
+                # higher) designed site by the length change.
+                delta = len(seq_to_design) - prev_len
+                for k, (npos_k, start_k, len_k) in list(designed_sites.items()):
+                    designed_sites[k] = (npos_k + delta, start_k + delta, len_k)
+                designed_sites[s] = (window_start + n_offset + 1, window_start, len(mut_sequon))
+                max_trials[gly_site_seqid] = num_motifs - 1
+                # print(s, wt_sequon, mut_sequon, state, flush=True)
                 wt_sequons[s] = wt_sequon
                 mut_sequons[s] = mut_sequon
                 states[s] = state
@@ -107,11 +121,13 @@ def prepare_seq(
     wt_sequons = dict(sorted(wt_sequons.items(), key=lambda x: x[0]))
     mut_sequons = dict(sorted(mut_sequons.items(), key=lambda x: x[0]))
     states = dict(sorted(states.items(), key=lambda x: x[0]))
-    
-    return seq_to_design, asn_sites, seqs, wt_seq, sampled_sites, wt_sequons, mut_sequons, states
+    designed_sites = dict(sorted(designed_sites.items(), key=lambda x: x[0]))
+
+    return seq_to_design, asn_sites, seqs, wt_seq, sampled_sites, wt_sequons, mut_sequons, states, designed_sites, max_trials, num_combinations
     
 def _load_model(
     base_model_name: str,
+    masked_llm_model_name: str,
     lora_model_name: str,
     device: torch.device,
     optional_lora_model_name: Optional[str] = None,
@@ -134,7 +150,7 @@ def _load_model(
     model.eval()
     
     if load_masked_esm:
-        masked_lm = EsmForMaskedLM.from_pretrained(base_model_name, torch_dtype=torch.float16).to(device)
+        masked_lm = EsmForMaskedLM.from_pretrained(masked_llm_model_name, torch_dtype=torch.float16).to(device)
         masked_lm.eval()
         for p in masked_lm.parameters():
             p.requires_grad = False
@@ -179,7 +195,8 @@ def predict_seq(
 def hallucinate(
     model: Any,
     masked_lm: Any,
-    tokenizer: EsmTokenizer,
+    tokenizer_gly: EsmTokenizer,
+    tokenizer_llm: EsmTokenizer,
     sequence: str,
     num_steps: int = 200,
     lr: float = 1e-2,
@@ -193,14 +210,19 @@ def hallucinate(
 
     Non-X residues are fixed, including the middle residue in N[^P][ST]
     motifs if it is not X.
+
+    tokenizer_gly corresponds to model.
+    tokenizer_llm corresponds to masked_lm.
     """
     set_seed(seed=int(time.time()))
     sequence = sequence.strip()
+
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     L = len(sequence)
     A = len(ESM_TOKENS)
+    eps = -20.0
 
     x_positions = {i for i, aa in enumerate(sequence) if aa == "X"}
     opt_positions = sorted(x_positions)
@@ -214,8 +236,10 @@ def hallucinate(
 
     pos_ids = [p + 1 for p in candidate_positions]
 
-    natural_aas = ["A", "R", "N", "D", "C", "Q", "E", "G", "H", "I",
-                   "L", "K", "M", "F", "S", "T", "W", "Y", "V"]
+    natural_aas = [
+        "A", "R", "N", "D", "C", "Q", "E", "G", "H", "I",
+        "L", "K", "M", "F", "S", "T", "W", "Y", "V",
+    ]
     token_keys = list(ESM_TOKENS.keys())
     allowed_idx = [ESM_TOKENS[a] for a in natural_aas if a in ESM_TOKENS]
     K = len(allowed_idx)
@@ -225,20 +249,39 @@ def hallucinate(
         if i not in opt_positions and aa in ESM_TOKENS:
             fixed_logits[i, ESM_TOKENS[aa]] = 5.0
 
-    init_scale = 1.0
-    gumbel_init = _sample_gumbel((len(opt_positions), K), device=device) * init_scale
+    gumbel_init = _sample_gumbel((len(opt_positions), K), device=device)
     opt_params = torch.nn.Parameter(gumbel_init.to(dtype=torch.float32))
     optimizer = torch.optim.Adam([opt_params], lr=lr)
 
     with torch.no_grad():
-        embedding_weight = model.esm.embeddings.word_embeddings.weight
-        aa_token_ids = torch.tensor(
-            [tokenizer._convert_token_to_id(aa) for aa in token_keys],
+        gly_embedding_weight = model.esm.embeddings.word_embeddings.weight
+        llm_embedding_weight = masked_lm.esm.embeddings.word_embeddings.weight
+
+        aa_token_ids_gly = torch.tensor(
+            [tokenizer_gly._convert_token_to_id(aa) for aa in token_keys],
             device=device,
         )
-        E = embedding_weight[aa_token_ids]
-        mask_token_id = tokenizer.mask_token_id
-        mask_embed = embedding_weight[mask_token_id]
+        aa_token_ids_llm = torch.tensor(
+            [tokenizer_llm._convert_token_to_id(aa) for aa in token_keys],
+            device=device,
+        )
+
+        E_gly = gly_embedding_weight[aa_token_ids_gly]
+        E_llm = llm_embedding_weight[aa_token_ids_llm]
+
+        gly_cls_embed = gly_embedding_weight[tokenizer_gly.cls_token_id].unsqueeze(0)
+        gly_eos_embed = gly_embedding_weight[tokenizer_gly.eos_token_id].unsqueeze(0)
+
+        llm_cls_embed = llm_embedding_weight[tokenizer_llm.cls_token_id].unsqueeze(0)
+        llm_eos_embed = llm_embedding_weight[tokenizer_llm.eos_token_id].unsqueeze(0)
+        llm_mask_embed = llm_embedding_weight[tokenizer_llm.mask_token_id]
+
+    try:
+        model.esm.embeddings.mask_token_id = None
+        model.esm.embeddings.token_dropout = False
+        masked_lm.esm.embeddings.token_dropout = False
+    except Exception:
+        pass
 
     for step in range(num_steps):
         optimizer.zero_grad()
@@ -250,45 +293,42 @@ def hallucinate(
             full[allowed_idx] = p
             seq_logits[seq_pos] = full
 
-        seq_probs = torch.softmax(seq_logits / temperature, dim=-1).to(E.dtype)
-        seq_embeds = seq_probs @ E
+        seq_probs = torch.softmax(seq_logits / temperature, dim=-1)
 
-        cls_id = tokenizer.cls_token_id
-        eos_id = tokenizer.eos_token_id
-        cls_embed = embedding_weight[cls_id].unsqueeze(0)
-        eos_embed = embedding_weight[eos_id].unsqueeze(0)
-
-        inputs_embeds_single = torch.cat(
-            [cls_embed, seq_embeds, eos_embed],
+        # gly model branch
+        seq_embeds_gly = seq_probs.to(E_gly.dtype) @ E_gly
+        inputs_embeds_gly_single = torch.cat(
+            [gly_cls_embed, seq_embeds_gly, gly_eos_embed],
             dim=0,
         ).unsqueeze(0)
 
-        batch_size = len(pos_ids)
-        inputs_embeds = inputs_embeds_single.repeat(batch_size, 1, 1)
-        attention_mask = torch.ones(batch_size, L + 2, device=device)
+        gly_batch_size = len(pos_ids)
+        inputs_embeds_gly = inputs_embeds_gly_single.repeat(gly_batch_size, 1, 1)
+        attention_mask_gly = torch.ones(gly_batch_size, L + 2, device=device)
         pos_tensor = torch.tensor(pos_ids, dtype=torch.long, device=device)
 
-        try:
-            model.esm.embeddings.mask_token_id = None
-            model.esm.embeddings.token_dropout = False
-            masked_lm.esm.embeddings.token_dropout = False
-        except Exception:
-            pass
-
         outputs = model(
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds_gly,
+            attention_mask=attention_mask_gly,
             pos=pos_tensor,
         )
-        logits = outputs.logits
-        probs = torch.softmax(logits, dim=-1)
 
+        probs = torch.softmax(outputs.logits, dim=-1)
         gly_loss = -torch.log(probs[:, 1] + 1e-8).mean()
         loss = gly_loss
 
+        # masked LM PLL branch
         if add_pll_loss and pll_weight > 0.0:
             P = len(opt_positions)
-            inputs_embeds_batch = inputs_embeds.repeat(P, 1, 1)
+
+            seq_embeds_llm = seq_probs.to(E_llm.dtype) @ E_llm
+            inputs_embeds_llm_single = torch.cat(
+                [llm_cls_embed, seq_embeds_llm, llm_eos_embed],
+                dim=0,
+            ).unsqueeze(0)
+
+            inputs_embeds_llm = inputs_embeds_llm_single.repeat(P, 1, 1)
+            attention_mask_llm = torch.ones(P, L + 2, device=device)
 
             masked_indices = torch.tensor(
                 [pos + 1 for pos in opt_positions],
@@ -297,22 +337,20 @@ def hallucinate(
             )
 
             for b in range(P):
-                inputs_embeds_batch[b, masked_indices[b], :] = mask_embed.to(
-                    inputs_embeds_batch.dtype
+                inputs_embeds_llm[b, masked_indices[b], :] = llm_mask_embed.to(
+                    inputs_embeds_llm.dtype
                 )
 
-            attention_mask_batch = attention_mask.repeat(P, 1)
-
             lm_outputs = masked_lm(
-                inputs_embeds=inputs_embeds_batch,
-                attention_mask=attention_mask_batch,
+                inputs_embeds=inputs_embeds_llm,
+                attention_mask=attention_mask_llm,
             )
-            lm_logits = lm_outputs.logits
 
+            lm_logits = lm_outputs.logits
             batch_idx = torch.arange(P, device=device)
             logits_at_mask = lm_logits[batch_idx, masked_indices, :]
 
-            logits_at_mask_reordered = logits_at_mask[:, aa_token_ids]
+            logits_at_mask_reordered = logits_at_mask[:, aa_token_ids_llm]
             lm_log_probs = torch.log_softmax(logits_at_mask_reordered, dim=-1)
 
             seq_probs_opt = seq_probs[opt_positions, :]
@@ -326,6 +364,7 @@ def hallucinate(
 
     with torch.no_grad():
         final_seq_logits = fixed_logits.clone()
+
         for j, seq_pos in enumerate(opt_positions):
             p = opt_params[j]
             full = torch.full((A,), eps, device=device, dtype=p.dtype)
@@ -336,7 +375,6 @@ def hallucinate(
         final_idx = torch.argmax(final_probs, dim=-1).cpu().tolist()
 
     designed_seq = "".join(token_keys[i] for i in final_idx)
-
     return designed_seq
 
 def _predict_designed_structures(
@@ -466,9 +504,11 @@ def halludesign_esm(
     filename = name if name else Path(input_fasta_file).name.split(".")[0]
     wt_structure_file = f"{output_dir}/{filename}.pdb"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    tokenizer = EsmTokenizer.from_pretrained(BASE_MODEL_NAME)
+    tokenizer_gly = EsmTokenizer.from_pretrained(BASE_MODEL_NAME)
+    tokenizer_llm = EsmTokenizer.from_pretrained(MASKED_LLM_MODEL_NAME)
     model, masked_llm = _load_model(
         base_model_name=BASE_MODEL_NAME,
+        masked_llm_model_name=MASKED_LLM_MODEL_NAME,
         lora_model_name=LORA_MODEL_NAME,
         optional_lora_model_name=HUMAN_LORA_MODEL_NAME,
         device=device,
@@ -488,12 +528,52 @@ def halludesign_esm(
     pattern_digits = max(1, len(str(num_patterns)))
     design_digits = max(1, len(str(num_designs_per_pattern)))
 
+    def _store_design(candidate, pattern_idx, design_rank):
+        context = candidate["context"]
+        states = context["states"]
+        wt_sequons = context["wt_sequons"]
+        seqs = context["seqs"]
+        sampled_sites = context["sampled_sites"]
+        designed_sites = context["designed_sites"]
+
+        designed_seq = candidate["designed_seq"]
+        pos_probs = candidate["pos_probs"]
+
+        designed_seqs_list.append(designed_seq)
+        pos_probs_list.append({
+            s: p
+            for s, p in zip(states.keys(), pos_probs.values())
+        })
+        pos_probs_plot_list.append(pos_probs)
+        sampled_sites_list.append(sampled_sites)
+        wt_sequons_list.append({
+            s: seq
+            for s, seq in zip(states.keys(), wt_sequons.values())
+        })
+        mut_sequons_list.append({
+            s: designed_seq[start:start + mlen]
+            for s, (npos, start, mlen) in designed_sites.items()
+        })
+        states_list.append(states)
+
+        if predict_structure:
+            suffix = (
+                f"_pattern_{pattern_idx + 1:0{pattern_digits}d}"
+                f"_design_{design_rank + 1:0{design_digits}d}"
+            )
+            structure_design_inputs.append({
+                "suffix": suffix,
+                "seqs": seqs.copy(),
+                "designed_seq": designed_seq,
+            })
+
     for i in range(num_patterns):
+        combination_id = i
         trial_times = [0] * num_gly_sites
-        selected_candidates = []
-        top_pos_probs = [{0:0.}]
-        while not all(v > 0.5 for pos_prob in top_pos_probs for v in pos_prob.values()):
-            seq_to_design, asn_sites, seqs, wt_seq, sampled_sites, wt_sequons, mut_sequons, states = prepare_seq(
+        accepted_candidates = []
+        candidate_pool = []
+        while len(accepted_candidates) < num_designs_per_pattern:
+            seq_to_design, asn_sites, seqs, wt_seq, sampled_sites, wt_sequons, mut_sequons, states, designed_sites, max_trials, num_combinations = prepare_seq(
                 input_fasta_file=input_fasta_file,
                 wt_structure_file=wt_structure_file,
                 output_dir=output_dir,
@@ -505,21 +585,27 @@ def halludesign_esm(
                 chain_id=chain_id,
                 num_gly_sites=num_gly_sites,
                 trial_times=trial_times,
-                combination_id=i,
+                combination_id=combination_id,
             )
 
-            natural_asn_sites = [
-                m.start() + 1
-                for m in re.finditer(r"N[^P][TS]", wt_seq)
-            ]
+            designed_positions = [npos for npos, _, _ in designed_sites.values()]
 
-            pattern_candidates = []
+            context = {
+                "seqs": seqs,
+                "sampled_sites": sampled_sites,
+                "wt_sequons": wt_sequons,
+                "states": states,
+                "designed_sites": designed_sites,
+            }
+
+            trial_candidates = []
 
             for candidate_id in range(num_candidates_per_pattern):
                 designed_seq = hallucinate(
                     model=model,
                     masked_lm=masked_llm,
-                    tokenizer=tokenizer,
+                    tokenizer_gly=tokenizer_gly,
+                    tokenizer_llm=tokenizer_llm,
                     sequence=seq_to_design,
                     num_steps=n_steps,
                     lr=learning_rate,
@@ -529,76 +615,78 @@ def halludesign_esm(
                     device=device,
                 )
 
-                designed_asn_sites = [
-                    s
-                    for s in [m.start() + 1 for m in re.finditer(r"N[^P][TS]", designed_seq)]
-                    if s not in natural_asn_sites
-                ]
-
                 gc.collect()
                 torch.cuda.empty_cache()
                 torch.cuda.reset_max_memory_allocated()
 
                 pos_probs = predict_seq(
                     model=model,
-                    tokenizer=tokenizer,
+                    tokenizer=tokenizer_gly,
                     sequence=designed_seq,
                     batch_size=8,
                 )
+                pos_probs = {pos: pos_probs.get(pos, 0.0) for pos in designed_positions}
 
                 pos_prob_sum = float(np.sum(list(pos_probs.values()))) if pos_probs else 0.0
 
-                pattern_candidates.append({
+                trial_candidates.append({
                     "designed_seq": designed_seq,
-                    "designed_asn_sites": designed_asn_sites,
                     "pos_probs": pos_probs,
                     "pos_prob_sum": pos_prob_sum,
                     "candidate_id": candidate_id,
+                    "context": context,
                 })
 
-            pattern_candidates = sorted(
-                pattern_candidates,
+            trial_candidates = sorted(
+                trial_candidates,
                 key=lambda x: x["pos_prob_sum"],
                 reverse=True,
             )
+            candidate_pool.extend(trial_candidates)
 
-            selected_candidates = pattern_candidates[:num_designs_per_pattern]
-            top_pos_probs = [candidate["pos_probs"] for candidate in selected_candidates]
-            if any(v <= 0.5 for pos_prob in top_pos_probs for v in pos_prob.values()):
-                trial_times = [t + 1 if v <= 0.5 else t for t, v in zip(trial_times, top_pos_probs[0].values())]
+            need = num_designs_per_pattern - len(accepted_candidates)
+            selected_candidates = trial_candidates[:need]
+
+            failing_candidate = None
+            for candidate in selected_candidates:
+                if all(v > 0.5 for v in candidate["pos_probs"].values()):
+                    accepted_candidates.append(candidate)
+                elif failing_candidate is None:
+                    failing_candidate = candidate
+
+            if len(accepted_candidates) >= num_designs_per_pattern:
+                break
+
+            if failing_candidate is None:
+                continue
+
+            failing = [v <= 0.5 for v in failing_candidate["pos_probs"].values()]
+            exhausted = all(
+                (not fail) or (t >= mt)
+                for t, mt, fail in zip(trial_times, max_trials, failing)
+            )
+            if not exhausted:
+                trial_times = [
+                    t + 1 if fail else t
+                    for t, fail in zip(trial_times, failing)
+                ]
             else:
-                for selected_rank, candidate in enumerate(selected_candidates):
-                    designed_seq = candidate["designed_seq"]
-                    designed_asn_sites = candidate["designed_asn_sites"]
-                    pos_probs = candidate["pos_probs"]
+                accepted_ids = {id(c) for c in accepted_candidates}
+                for candidate in sorted(
+                    candidate_pool,
+                    key=lambda x: x["pos_prob_sum"],
+                    reverse=True,
+                ):
+                    if len(accepted_candidates) >= num_designs_per_pattern:
+                        break
+                    if id(candidate) in accepted_ids:
+                        continue
+                    accepted_candidates.append(candidate)
+                    accepted_ids.add(id(candidate))
+                break
 
-                    designed_seqs_list.append(designed_seq)
-                    pos_probs_list.append({
-                        s: p
-                        for s, p in zip(states.keys(), pos_probs.values())
-                    })
-                    pos_probs_plot_list.append(pos_probs)
-                    sampled_sites_list.append(sampled_sites)
-                    wt_sequons_list.append({
-                        s: seq
-                        for s, seq in zip(states.keys(), wt_sequons.values())
-                    })
-                    mut_sequons_list.append({
-                        s: designed_seq[pos - 2:min(pos - 2 + len(mut_sequon), len(designed_seq))]
-                        for s, pos, mut_sequon in zip(states.keys(), designed_asn_sites, mut_sequons.values())
-                    })
-                    states_list.append(states)
-
-                    if predict_structure:
-                        suffix = (
-                            f"_pattern_{i + 1:0{pattern_digits}d}"
-                            f"_design_{selected_rank + 1:0{design_digits}d}"
-                        )
-                        structure_design_inputs.append({
-                            "suffix": suffix,
-                            "seqs": seqs.copy(),
-                            "designed_seq": designed_seq,
-                        })
+        for design_rank, candidate in enumerate(accepted_candidates):
+            _store_design(candidate, i, design_rank)
 
     reporter = designer_report(
         input_fasta_file=input_fasta_file,
