@@ -1992,12 +1992,14 @@ class BordaCount:
         return df
 
 class prefilter_report:
-    def __init__(self, input_fasta_file: str, query_sequence: str, ppi_sites: set, intrachain_sites: set, hotspots_sites: set, sequence_unfav_sites: set, low_rsasa_sites: set, non_editable_regions: set, editable_regions: set, df_file: str, output_html: str):
+    def __init__(self, input_fasta_file: str, query_sequence: str, ppi_sites: set, intrachain_sites: set, hotspots_sites: set, conserverd_sites: set, coupling_sites: set, sequence_unfav_sites: set, low_rsasa_sites: set, non_editable_regions: set, editable_regions: set, df_file: str, output_html: str):
         self.input_fasta_file = input_fasta_file
         self.query_sequence = query_sequence
         self.ppi_sites = ppi_sites
         self.intrachain_sites = intrachain_sites
         self.hotspots_sites = hotspots_sites
+        self.conserverd_sites = conserverd_sites
+        self.coupling_sites = coupling_sites
         self.sequence_unfav_sites = sequence_unfav_sites
         self.low_rsasa_sites = low_rsasa_sites
         self.non_editable_regions = non_editable_regions
@@ -2169,6 +2171,8 @@ class prefilter_report:
         ppi_sites_sorted = sorted(self.ppi_sites)
         intrachain_sites_sorted = sorted(self.intrachain_sites)
         hotspots_sites_sorted = sorted(self.hotspots_sites)
+        conserved_sites_sorted = sorted(self.conserverd_sites)
+        coupling_sites_sorted = sorted(self.coupling_sites)
         sequence_unfav_sorted = sorted(self.sequence_unfav_sites)
         low_rsasa_sorted = sorted(self.low_rsasa_sites)
         editable_sorted = sorted(self.editable_regions)
@@ -2176,6 +2180,8 @@ class prefilter_report:
         ppi_sites_str = self._compress_ranges(ppi_sites_sorted)
         intrachain_sites_str = self._compress_ranges(intrachain_sites_sorted)
         hotspots_sites_str = self._compress_ranges(hotspots_sites_sorted)
+        conserved_sites_str = self._compress_ranges(conserved_sites_sorted)
+        coupling_sites_str = self._compress_ranges(coupling_sites_sorted)
         sequence_unfav_str = self._compress_ranges(sequence_unfav_sorted)
         low_rsasa_str = self._compress_ranges(low_rsasa_sorted)
         editable_str = self._compress_ranges(editable_sorted)
@@ -2259,6 +2265,14 @@ class prefilter_report:
         <div class="region-box re-other">
             <div class="region-label">Hotspots related positions</div>
             <div>{hotspots_sites_str or '<span class="region-empty">None</span>'}</div>
+        </div>
+        <div class="region-box re-other">
+            <div class="region-label">Conserved positions</div>
+            <div>{conserved_sites_str or '<span class="region-empty">None</span>'}</div>
+        </div>
+        <div class="region-box re-other">
+            <div class="region-label">Co-evolution positions</div>
+            <div>{coupling_sites_str or '<span class="region-empty">None</span>'}</div>
         </div>
         <div class="region-box re-other">
             <div class="region-label">Sequence unfavorable positions</div>
