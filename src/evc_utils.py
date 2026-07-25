@@ -146,4 +146,4 @@ class EVC_funcs:
         coupling = (coupling_strength >= evc_threshold).astype(int)
         coupling_sites = (np.flatnonzero(np.sum(coupling, axis=1) != 0) + 1).tolist()
 
-        return set(conserved_sites) | set(coupling_sites), conserve_df, np.mean(coupling_strength, axis=1)
+        return set(conserved_sites), set(coupling_sites), conserve_df, np.mean(coupling_strength, axis=1)
