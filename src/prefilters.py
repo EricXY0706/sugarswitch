@@ -26,6 +26,8 @@ def run_prefilters(
     protein_chain_id: str = "A",
     functional_hotspots: list = [],
     enable_glycan_grafting: bool = True,
+    conservation_threshold: float = 0.8,
+    evc_coupling_threshold: float = 0.5,
 ):
     """
     Run prefilters on the input fasta file.
@@ -58,6 +60,10 @@ def run_prefilters(
     
     # 2. Conservation and evolutionary coupling
     input_alignment_file = f"{output_dir}/msa/uniref_{aln_file_id}.a3m"
+    conservation_df = None
+    coupling_stength = None
+    conserverd_sites = set()
+    coupling_sites = set()
     if len(list(SeqIO.parse(input_alignment_file, "fasta"))) >= 10:
         evc = EVC_funcs(alignment_file=input_alignment_file, structure_file=structure_file, chain_id=protein_chain_id, out_dir=f"{output_dir}/evc/")
         evc.run_evc(
@@ -69,12 +75,20 @@ def run_prefilters(
             lambda_J=basic_configs["evc_lambda_J"],
             cpu=basic_configs["evc_num_cpu"],
         )
-        conserverd_coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
+        # conserverd_coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
+        #     secondary_structure=ss,
+        #     conservation_threshold=basic_configs["conservation_threshold"],
+        #     evc_threshold=basic_configs["evc_coupling_threshold"],
+        # )
+        conserverd_sites, coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
             secondary_structure=ss,
-            conservation_threshold=basic_configs["conservation_threshold"],
-            evc_threshold=basic_configs["evc_coupling_threshold"],
+            conservation_threshold=conservation_threshold,
+            evc_threshold=evc_coupling_threshold,
         )
+        conserverd_coupling_sites = conserverd_sites | coupling_sites
     else:
+        conserverd_sites = set()
+        coupling_sites = set()
         conserverd_coupling_sites = set()
 
     # 3. Solvent accessible surface area
@@ -103,9 +117,7 @@ def run_prefilters(
     os.makedirs(f"{output_dir}/glycans/", exist_ok=True)
     for s in tqdm(editable_regions, dynamic_ncols=True):
         
-        # 1. SASA
-        rsasa_value = round(rsasa_index_dict[s], 3)
-        # 2. Mutation effects
+        # 1. Mutation effects
         mut_score_s = saprot.mutation_score(
             parsed_foldseek_seq=parsed_foldseek_seq,
             mutations={s: "N"},
@@ -141,7 +153,7 @@ def run_prefilters(
         ddG_next2 = round((ddG_next2_S + ddG_next2_T) / 2, 3)
         dTm_next2 = round((dTm_next2_S + dTm_next2_T) / 2, 3)
         
-        # 3. Glycan grafting for reference only
+        # 2. Glycan grafting for reference only
         if enable_glycan_grafting:
             glycoprotein_structure_file = f"{output_dir}/glycans/{filename}_{list(query_sequence)[s-1]}{s}N.pdb"
             rosetta.mutate(
@@ -176,12 +188,12 @@ def run_prefilters(
         else:
             clash_residues = None
 
-        results.append([s, SS_TAG[ss[(protein_chain_id, s)]][0], f"{list(query_sequence)[s-1]}{s}N", rsasa_value,
+        results.append([s, SS_TAG[ss[(protein_chain_id, s)]][0], f"{list(query_sequence)[s-1]}{s}N",
                         ddG_s, dTm_s, ddG_next2, dTm_next2,
                         mut_score_s, mut_score_s_next2, clash_residues])
 
     df = pd.DataFrame(results)
-    df.columns = ["Site", "SS", "Mutation", "rSASA",
+    df.columns = ["Site", "SS", "Mutation",
                   "ddG", "dTm", "ddG_NXST", "dTm_NXST",
                   "MutScore", "MutScore_NXST", "Clash"]
     ranker = BordaCount(**ranker_configs)
@@ -198,13 +210,18 @@ def run_prefilters(
     reporter = prefilter_report(
         input_fasta_file=input_fasta_file,
         query_sequence=query_sequence,
-        structure_unfav_sites=structure_unfav_sites,
+        ppi_sites=ppi_sites,
+        intrachain_sites=intrachain_sites,
+        hotspots_sites=hotspots_sites,
+        conserverd_sites=conserverd_sites,
+        coupling_sites=coupling_sites,
         sequence_unfav_sites=conserverd_coupling_sites,
         low_rsasa_sites=low_rsasa_sites,
+        non_editable_regions=non_editable_regions,
         editable_regions=editable_regions,
         df_file=df_file,
         output_html=f"{output_dir}/{filename}_prefilter_report.html",
     )
     reporter.generate_prefilter_report()
     
-    return structure_unfav_sites, conserverd_coupling_sites, low_rsasa_sites, editable_regions
+    return conservation_df, coupling_stength, interaction_dict, rsasa_index_dict

@@ -16,7 +16,9 @@ def sugarswitch():
 @click.option("--chain_id", type=str, help="Chain ID to be glycosyalted", required=True)
 @click.option("--functional_hotspots", default="[]", type=str, help="List of positions to avoid modification in string format, e.g. '[1,2,3,'4-10']' ", required=False)
 @click.option("--enable_glycan_grafting", default=True, type=bool, help="Whether enables glycan grafting to access cavity volumn to hold glycans", required=False)
-def prefilter(input_fasta_file, input_structure_file, out_dir, name, chain_id, functional_hotspots, enable_glycan_grafting):
+@click.option("--conservation_threshold", type=float, required=False)
+@click.option("--evc_coupling_threshold", type=float, required=False)
+def prefilter(input_fasta_file, input_structure_file, out_dir, name, chain_id, functional_hotspots, enable_glycan_grafting, conservation_threshold, evc_coupling_threshold):
     
     from src.prefilters import run_prefilters
     run_prefilters(
@@ -27,6 +29,8 @@ def prefilter(input_fasta_file, input_structure_file, out_dir, name, chain_id, f
         protein_chain_id=chain_id,
         functional_hotspots=functional_hotspots,
         enable_glycan_grafting=enable_glycan_grafting,
+        conservation_threshold=conservation_threshold,
+        evc_coupling_threshold=evc_coupling_threshold,
     )
 
 @click.command()
@@ -50,7 +54,9 @@ def ssbuilder(input_fasta_file, out_dir):
 @click.option("--num_gly_sites", default=3, type=int, help="number of glycosylation sites to design", required=False)
 @click.option("--add_pll_loss", default=True, type=bool, help="whether add pseudo log likelihood loss", required=False)
 @click.option("--predict_structure", default=True, type=bool, help="whether predict designed glycoprotein structure", required=False)
-def designer(input_fasta_file, input_structure_file, out_dir, name, chain_id, functional_hotspots, num_patterns, num_candidates_per_pattern, num_designs_per_pattern, num_gly_sites, add_pll_loss, enable_glycan_grafting, predict_structure):
+@click.option("--conservation_threshold", type=float, required=False)
+@click.option("--evc_coupling_threshold", type=float, required=False)
+def designer(input_fasta_file, input_structure_file, out_dir, name, chain_id, functional_hotspots, num_patterns, num_candidates_per_pattern, num_designs_per_pattern, num_gly_sites, add_pll_loss, enable_glycan_grafting, predict_structure, conservation_threshold, evc_coupling_threshold):
     
     from src.prefilters import run_prefilters
     from src.designers import halludesign_esm
@@ -63,6 +69,8 @@ def designer(input_fasta_file, input_structure_file, out_dir, name, chain_id, fu
         protein_chain_id=chain_id,
         functional_hotspots=functional_hotspots,
         enable_glycan_grafting=enable_glycan_grafting,
+        conservation_threshold=conservation_threshold,
+        evc_coupling_threshold=evc_coupling_threshold,
     )
     halludesign_esm(
         input_fasta_file=input_fasta_file,
