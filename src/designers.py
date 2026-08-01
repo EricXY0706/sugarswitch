@@ -39,6 +39,7 @@ def prepare_seq(
     interaction_dict: dict,
     rsasa_index_dict: dict,
     name: str = None,
+    suffix: str = None,
     chain_id: str = "A",
     num_gly_sites: int = 3,
     trial_times: list = [0],
@@ -69,7 +70,7 @@ def prepare_seq(
             seq_to_design = seq
             sampled_sites, num_combinations = sample_sites(
                 structure_file=wt_structure_file,
-                scoring_df=f"{output_dir}/{filename}_prefilter_result.csv",
+                scoring_df=f"{output_dir}/{filename}_prefilter_result_{suffix}.csv",
                 conservation_df=conservation_df,
                 coupling_stength=coupling_stength,
                 interaction_dict=interaction_dict,
@@ -381,6 +382,7 @@ def _predict_designed_structures(
     design_inputs,
     output_dir: str,
     filename: str,
+    filesuffix: str,
 ):
     """
     Run one Boltz batch for all accepted designs.
@@ -449,7 +451,8 @@ def _predict_designed_structures(
         "--out_dir", output_dir,
     ]
     subprocess.run(cmd, check=True)
-
+    
+    os.makedirs(f"{output_dir}/designs_{filesuffix}", exist_ok=True)
     result_roots = sorted(Path(output_dir).glob(f"boltz_results_{batch_input_dir.name}*"))
     pdb_files = []
     for design in design_inputs:
@@ -467,7 +470,7 @@ def _predict_designed_structures(
         if pdb_file is None:
             raise FileNotFoundError(f"Boltz prediction for `{target_name}` was not found.")
 
-        output_pdb = Path(output_dir) / f"{target_name}.pdb"
+        output_pdb = Path(output_dir) / f"designs_{filesuffix}" / f"{target_name}.pdb"
         shutil.move(str(pdb_file), str(output_pdb))
         pdb_files.append(str(output_pdb))
 
@@ -488,6 +491,7 @@ def halludesign_esm(
     interaction_dict: dict,
     rsasa_index_dict: dict,
     name: str,
+    suffix: str,
     chain_id: str = "A",
     num_patterns: int = 1,
     num_candidates_per_pattern: int = 3,
@@ -582,6 +586,7 @@ def halludesign_esm(
                 interaction_dict=interaction_dict,
                 rsasa_index_dict=rsasa_index_dict,
                 name=filename,
+                suffix=suffix,
                 chain_id=chain_id,
                 num_gly_sites=num_gly_sites,
                 trial_times=trial_times,
@@ -698,7 +703,7 @@ def halludesign_esm(
         wt_sequons_list=wt_sequons_list,
         mut_sequons_list=mut_sequons_list,
         states_list=states_list,
-        output_html=f"{output_dir}/{filename}_designer_report.html",
+        output_html=f"{output_dir}/{filename}_designer_report_{suffix}.html",
     )
     reporter.generate_designer_report()
     
@@ -707,6 +712,7 @@ def halludesign_esm(
             design_inputs=structure_design_inputs,
             output_dir=output_dir,
             filename=filename,
+            filesuffix=suffix,
         )
 
     gc.collect()

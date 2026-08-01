@@ -2,7 +2,9 @@ from pathlib import Path
 import click
 import os
 import sys
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
+sys.path.insert(0, BASE_DIR)
 
 @click.group()
 def sugarswitch():
@@ -13,12 +15,13 @@ def sugarswitch():
 @click.option("--input_structure_file", type=str, help="pdb file for inference", required=False)
 @click.option("--out_dir", default="./output", type=str, help="infer result dir", required=True)
 @click.option("--name", type=str, help="job name", required=False)
+@click.option("--suffix", type=str, required=False)
 @click.option("--chain_id", type=str, help="Chain ID to be glycosyalted", required=True)
 @click.option("--functional_hotspots", default="[]", type=str, help="List of positions to avoid modification in string format, e.g. '[1,2,3,'4-10']' ", required=False)
 @click.option("--enable_glycan_grafting", default=True, type=bool, help="Whether enables glycan grafting to access cavity volumn to hold glycans", required=False)
 @click.option("--conservation_threshold", type=float, required=False)
 @click.option("--evc_coupling_threshold", type=float, required=False)
-def prefilter(input_fasta_file, input_structure_file, out_dir, name, chain_id, functional_hotspots, enable_glycan_grafting, conservation_threshold, evc_coupling_threshold):
+def prefilter(input_fasta_file, input_structure_file, out_dir, name, suffix, chain_id, functional_hotspots, enable_glycan_grafting, conservation_threshold, evc_coupling_threshold):
     
     from src.prefilters import run_prefilters
     run_prefilters(
@@ -26,6 +29,7 @@ def prefilter(input_fasta_file, input_structure_file, out_dir, name, chain_id, f
         input_structure_file=input_structure_file,
         output_dir=out_dir, 
         name=name,
+        suffix=suffix,
         protein_chain_id=chain_id,
         functional_hotspots=functional_hotspots,
         enable_glycan_grafting=enable_glycan_grafting,
@@ -45,6 +49,7 @@ def ssbuilder(input_fasta_file, out_dir):
 @click.option("--input_structure_file", type=str, help="pdb file for inference", required=False)
 @click.option("--out_dir", default="./output", type=str, help="infer result dir", required=False)
 @click.option("--name", type=str, help="job name", required=False)
+@click.option("--suffix", type=str, required=False)
 @click.option("--chain_id", type=str, help="Chain ID to be glycosyalted", required=True)
 @click.option("--functional_hotspots", default="[]", type=str, help="List of positions to avoid modification in string format, e.g. '[1,2,3,'4-10']' ", required=False)
 @click.option("--enable_glycan_grafting", default=True, type=bool, help="Whether enables glycan grafting to access cavity volumn to hold glycans", required=False)
@@ -56,7 +61,7 @@ def ssbuilder(input_fasta_file, out_dir):
 @click.option("--predict_structure", default=True, type=bool, help="whether predict designed glycoprotein structure", required=False)
 @click.option("--conservation_threshold", type=float, required=False)
 @click.option("--evc_coupling_threshold", type=float, required=False)
-def designer(input_fasta_file, input_structure_file, out_dir, name, chain_id, functional_hotspots, num_patterns, num_candidates_per_pattern, num_designs_per_pattern, num_gly_sites, add_pll_loss, enable_glycan_grafting, predict_structure, conservation_threshold, evc_coupling_threshold):
+def designer(input_fasta_file, input_structure_file, out_dir, name, suffix, chain_id, functional_hotspots, num_patterns, num_candidates_per_pattern, num_designs_per_pattern, num_gly_sites, add_pll_loss, enable_glycan_grafting, predict_structure, conservation_threshold, evc_coupling_threshold):
     
     from src.prefilters import run_prefilters
     from src.designers import halludesign_esm
@@ -66,6 +71,7 @@ def designer(input_fasta_file, input_structure_file, out_dir, name, chain_id, fu
         input_structure_file=input_structure_file,
         output_dir=out_dir, 
         name=name,
+        suffix=suffix,
         protein_chain_id=chain_id,
         functional_hotspots=functional_hotspots,
         enable_glycan_grafting=enable_glycan_grafting,
@@ -80,6 +86,7 @@ def designer(input_fasta_file, input_structure_file, out_dir, name, chain_id, fu
         interaction_dict=interaction_dict,
         rsasa_index_dict=rsasa_index_dict,
         name=name,
+        suffix=suffix,
         chain_id=chain_id,
         num_patterns=num_patterns,
         num_candidates_per_pattern=num_candidates_per_pattern,

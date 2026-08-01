@@ -598,7 +598,6 @@ def update_infer(
         input_structure_file: str,
         output_dir: str,
         filename: str = None,
-        suffix: str = "",
 ) -> str:
     """
     Update the infer result dir with the input fasta file.
@@ -606,11 +605,10 @@ def update_infer(
     os.makedirs(output_dir, exist_ok=True)
     if not os.path.exists(input_fasta_file):
         raise FileNotFoundError(f"Input fasta file `{input_fasta_file}` not found.")
-    filename = f"{filename}{suffix}"
     msa = MsaFileGenerator(input_fasta_file=input_fasta_file)
     with open(input_fasta_file, "r") as f:
         query = f.read()
-    msa.run_mmseqs2(x=query, prefix=f"{output_dir}/msa{suffix}")
+    msa.run_mmseqs2(x=query, prefix=f"{output_dir}/msa")
     
     # Boltz prediction
     if input_structure_file is not None:

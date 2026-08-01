@@ -34,7 +34,7 @@ def run_prefilters(
     """
     
     filename = name if name else Path(input_fasta_file).name.split(".")[0]
-    structure_file = update_infer(input_fasta_file=input_fasta_file, input_structure_file=input_structure_file, output_dir=output_dir, filename=filename, suffix=suffix)
+    structure_file = update_infer(input_fasta_file=input_fasta_file, input_structure_file=input_structure_file, output_dir=output_dir, filename=filename)
     query_sequence = FastaLoader.get_sequence(sequence_file=input_fasta_file, chain_id=protein_chain_id)
     chains_nums = [int(rec.description.split(" ")[-1].split(":")[-1]) for rec in SeqIO.parse(input_fasta_file, "fasta")]
     chains_nums.append(len(CHAIN_IDS) - sum(chains_nums))
@@ -198,7 +198,7 @@ def run_prefilters(
                   "MutScore", "MutScore_NXST", "Clash"]
     ranker = BordaCount(**ranker_configs)
     df = ranker.compute_score(df)
-    df_file = f"{output_dir}/{filename}_prefilter_result.csv"
+    df_file = f"{output_dir}/{filename}_prefilter_result_{suffix}.csv"
     df.to_csv(df_file, index=False)
     pose = rosetta.get_pose(structure_file)
     StructureFileEditor.write_score_as_bfactor(
@@ -220,7 +220,7 @@ def run_prefilters(
         non_editable_regions=non_editable_regions,
         editable_regions=editable_regions,
         df_file=df_file,
-        output_html=f"{output_dir}/{filename}_prefilter_report.html",
+        output_html=f"{output_dir}/{filename}_prefilter_report_{suffix}.html",
     )
     reporter.generate_prefilter_report()
     
