@@ -44,6 +44,7 @@ def prepare_seq(
     num_gly_sites: int = 3,
     trial_times: list = [0],
     combination_id: int = 0,
+    design_sites: str = None,
 ):
     filename = name if name else Path(input_fasta_file).name.split(".")[0]
     modify_seq_id = (ord(chain_id) - ord("A") + 1)
@@ -82,6 +83,10 @@ def prepare_seq(
                 return_num_combinations=True,
             )
             sampled_sites = sorted(sampled_sites, reverse=True)
+            
+            import ast
+            if design_sites:
+                sampled_sites = ast.literal_eval(design_sites)
             
             for i, s in enumerate(sampled_sites):
                 gly_site_seqid = len(sampled_sites) - 1 - i
@@ -503,6 +508,7 @@ def halludesign_esm(
     add_pll_loss: bool = True,
     pll_weight: float = 1.0,
     predict_structure: bool = True,
+    design_sites: str = None,
 ):
     warnings.filterwarnings("ignore")
     filename = name if name else Path(input_fasta_file).name.split(".")[0]
@@ -591,8 +597,9 @@ def halludesign_esm(
                 num_gly_sites=num_gly_sites,
                 trial_times=trial_times,
                 combination_id=combination_id,
+                design_sites=design_sites,
             )
-
+            
             designed_positions = [npos for npos, _, _ in designed_sites.values()]
 
             context = {
