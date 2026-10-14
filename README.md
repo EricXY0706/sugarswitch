@@ -68,7 +68,7 @@
          --predict_structure True \ # Whether to predict the structure of designed glycoprotein
          --design_sites "[20,40,60]" \ # This parameter force the model to design glyco sites on the given locations
       ```
-2. Optionally update the configrations for **Prefilter** in `config.py`
+2. Optionally update the configurations for **Prefilter** in `config.py`
    
    - **pipeline configurations**:  
       ⚠️ We recommand not adjusting the **EVCouplings** related configs (EVC, unless you are familiar with the parameters) and empirically pre-defined **glycan chain topological parameters** (bond length, angles, and dihedrals).  
