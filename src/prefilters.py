@@ -47,6 +47,7 @@ def run_prefilters(
             aln_file_id = i + 1
 
     ss = StructureLoader.get_secondary_structure(structure_file=structure_file, chain_id=protein_chain_id)
+    hotspots = [n for x in ast.literal_eval(functional_hotspots) for n in (range(int(x.split("-")[0]), int(x.split("-")[1]) + 1) if isinstance(x, str) else [x])]
     
     # ---------------------------------------------------- Filter ----------------------------------------------------
     # 1. Interaction (intra- and inter- chain)
@@ -54,7 +55,7 @@ def run_prefilters(
     interaction_dict = analyzer.analyze()
     ppi_sites = analyzer.extract_ppi_sites(chain_id=protein_chain_id, result=interaction_dict)
     intrachain_sites = analyzer.extract_intra_interaction_sites(chain_id=protein_chain_id, result=interaction_dict)
-    hotspots_sites = analyzer.extract_sites_interacting_with_hotspots(chain_id=protein_chain_id, hotspots=ast.literal_eval(functional_hotspots), result=interaction_dict)
+    hotspots_sites = analyzer.extract_sites_interacting_with_hotspots(chain_id=protein_chain_id, hotspots=hotspots, result=interaction_dict)
     
     # 2. Conservation and evolutionary coupling
     input_alignment_file = f"{output_dir}/msa/uniref_{aln_file_id}.a3m"
