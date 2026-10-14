@@ -623,7 +623,7 @@ def update_infer(
             "protein": {
                 "id": ids,
                 "sequence": seq,
-                "msa": f"{output_dir}/msa{suffix}/uniref_{len(out)+1}.a3m",
+                "msa": f"{output_dir}/msa/uniref_{len(out)+1}.a3m",
             }
         })
         chain_ptr += num
