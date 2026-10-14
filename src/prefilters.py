@@ -26,8 +26,6 @@ def run_prefilters(
     protein_chain_id: str = "A",
     functional_hotspots: list = [],
     enable_glycan_grafting: bool = True,
-    conservation_threshold: float = 0.8,
-    evc_coupling_threshold: float = 0.5,
 ):
     """
     Run prefilters on the input fasta file.
@@ -75,15 +73,10 @@ def run_prefilters(
             lambda_J=basic_configs["evc_lambda_J"],
             cpu=basic_configs["evc_num_cpu"],
         )
-        # conserverd_coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
-        #     secondary_structure=ss,
-        #     conservation_threshold=basic_configs["conservation_threshold"],
-        #     evc_threshold=basic_configs["evc_coupling_threshold"],
-        # )
-        conserverd_sites, coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
+        conserverd_coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
             secondary_structure=ss,
-            conservation_threshold=conservation_threshold,
-            evc_threshold=evc_coupling_threshold,
+            conservation_threshold=basic_configs["conservation_threshold"],
+            evc_threshold=basic_configs["evc_coupling_threshold"],
         )
         conserverd_coupling_sites = conserverd_sites | coupling_sites
     else:
@@ -198,7 +191,9 @@ def run_prefilters(
                   "MutScore", "MutScore_NXST", "Clash"]
     ranker = BordaCount(**ranker_configs)
     df = ranker.compute_score(df)
-    df_file = f"{output_dir}/{filename}_prefilter_result_{suffix}.csv"
+    if suffix[0] != "_":
+        suffix = "_" + suffix
+    df_file = f"{output_dir}/{filename}_prefilter_result{suffix}.csv"
     df.to_csv(df_file, index=False)
     pose = rosetta.get_pose(structure_file)
     StructureFileEditor.write_score_as_bfactor(
@@ -220,7 +215,7 @@ def run_prefilters(
         non_editable_regions=non_editable_regions,
         editable_regions=editable_regions,
         df_file=df_file,
-        output_html=f"{output_dir}/{filename}_prefilter_report_{suffix}.html",
+        output_html=f"{output_dir}/{filename}_prefilter_report{suffix}.html",
     )
     reporter.generate_prefilter_report()
     
