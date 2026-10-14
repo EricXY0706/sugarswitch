@@ -33,7 +33,7 @@
 
       python run_sugarswitch.py prefilter \
          --input_fasta_file "path/to/input_fasta_file" \
-         --input_structure_file "path/to/optinal_input_structure_file" \
+         --input_structure_file "path/to/optinal_input_structure_file" \ # Ignore this when the structure file is not available
          --out_dir "path/to/output_dir" \
          --chain_id "CHAIN_ID" \
          --functional_hotspots "[1,2,3,'4-10']" \ # This has to be a string with quotation marks
@@ -55,7 +55,7 @@
 
       python run_sugarswitch.py pipeline \
          --input_fasta_file "path/to/input_fasta_file" \
-         --input_structure_file "path/to/optinal_input_structure_file" \
+         --input_structure_file "path/to/optinal_input_structure_file" \ # Ignore this when the structure file is not available
          --out_dir "path/to/output_dir" \
          --chain_id "CHAIN_ID" \
          --functional_hotspots "[1,2,3,'4-10']" \ # This has to be a string with quotation marks
@@ -63,9 +63,10 @@
          --num_patterns 3 \ # This is the number of different combinations of sites
          --num_candidates_per_pattern 10 \
          --num_designs_per_pattern 1 \ # Design and filter 1 out of 10 sequences per combination, this yields 3*1 designs in total
-         --num_gly_sites 3 \ # This is the number of glyco site on each designed sequence
+         --num_gly_sites 3 \ # This is the number of glyco sites on each designed sequence
          --add_pll_loss True \ # This makes the sequence more natural but significantly increases computational overhead
          --predict_structure True \ # Whether to predict the structure of designed glycoprotein
+         --design_sites "[20,40,60]" \ # This parameter force the model to design glyco sites on the given locations
       ```
 2. Optionally update the configrations for **Prefilter** in `config.py`
    
@@ -97,16 +98,15 @@
    - **ranker configurations**:  
       ➡️ Manually set the weights for all the factors for glycosylation sites ranking. The higher the value, the more important the factor is.
       ```Python
-      # An example
+      # An example: This set of weights were pre-computed and optimized, see details in our article.
 
       ranker_configs = {
-         "rSASA_weight": 1.0, # rSASA of the current site.
-         "ddG_weight": 0.3, # ΔΔG of the protein mutant (NXX) and WT.
-         "dTm_weight": 0.3, # ΔTm of the protein mutant (NXX) and WT
-         "ddG_NXST_weight": 0.2, # ΔΔG of the protein mutant (NXS/T) and WT
-         "dTm_NXST_weight": 0.2, # ΔTm of the protein mutant (NXS) and WT
-         "MutScore_weight": 0.3, # Mutation score of the protein mutant (NXX).
-         "MutScore_NXST_weight": 0.2, # Mutation score of the protein mutant (NXS/T).
+         "ddG_weight": 0.0196, # ΔΔG of the protein mutant (NXX) and WT.
+         "dTm_weight": 0.0482, # ΔTm of the protein mutant (NXX) and WT
+         "ddG_NXST_weight": 0.0824, # ΔΔG of the protein mutant (NXS/T) and WT
+         "dTm_NXST_weight": 0.1372, # ΔTm of the protein mutant (NXS) and WT
+         "MutScore_weight": 0.1799, # Mutation score of the protein mutant (NXX).
+         "MutScore_NXST_weight": 0.5326, # Mutation score of the protein mutant (NXS/T).
       }
       ```
 
