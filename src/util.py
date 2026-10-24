@@ -633,7 +633,7 @@ def update_infer(
     
     cmd = [
         "boltz", "predict", f"{output_dir}/{filename}.yaml",
-        "--cache", f"./boltz_ckpt",
+        "--cache", f"/sdata2/WORK/Xuyi/sugarswitch/boltz_ckpt",
         "--output_format", "pdb",
         "--out_dir", output_dir,
     ]

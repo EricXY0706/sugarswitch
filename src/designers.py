@@ -23,8 +23,8 @@ eps = -1e9
 BASE_MODEL_NAME = "facebook/esm2_t30_150M_UR50D"
 MASKED_LLM_MODEL_NAME = "facebook/esm2_t30_150M_UR50D"
 
-LORA_MODEL_NAME = "./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint"
-HUMAN_LORA_MODEL_NAME = "./ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint-human"
+LORA_MODEL_NAME = "/sdata2/WORK/Xuyi/sugarswitch/ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint"
+HUMAN_LORA_MODEL_NAME = "/sdata2/WORK/Xuyi/sugarswitch/ESM-LoRA-Gly/checkpoints/N-linked/ESM-150M/checkpoint-human"
 
 def _sample_gumbel(shape, device, eps=1e-9):
     u = torch.rand(shape, device=device)
@@ -451,7 +451,7 @@ def _predict_designed_structures(
 
     cmd = [
         "boltz", "predict", str(batch_input_dir),
-        "--cache", f"./boltz_ckpt",
+        "--cache", f"/sdata2/WORK/Xuyi/sugarswitch/boltz_ckpt",
         "--output_format", "pdb",
         "--out_dir", output_dir,
     ]

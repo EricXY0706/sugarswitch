@@ -26,13 +26,17 @@ def run_prefilters(
     protein_chain_id: str = "A",
     functional_hotspots: list = [],
     enable_glycan_grafting: bool = True,
+    conservation_threshold: float = 0.8,
+    evc_coupling_threshold: float = 0.5,
 ):
     """
     Run prefilters on the input fasta file.
     """
-    
+    print(f"Prefilter started!")
+    print(f"Executing: MSA searching and structure prediction...")
     filename = name if name else Path(input_fasta_file).name.split(".")[0]
     structure_file = update_infer(input_fasta_file=input_fasta_file, input_structure_file=input_structure_file, output_dir=output_dir, filename=filename)
+    print(f"Done: MSA searching and structure prediction!")
     query_sequence = FastaLoader.get_sequence(sequence_file=input_fasta_file, chain_id=protein_chain_id)
     chains_nums = [int(rec.description.split(" ")[-1].split(":")[-1]) for rec in SeqIO.parse(input_fasta_file, "fasta")]
     chains_nums.append(len(CHAIN_IDS) - sum(chains_nums))
@@ -50,6 +54,7 @@ def run_prefilters(
     hotspots = [n for x in ast.literal_eval(functional_hotspots) for n in (range(int(x.split("-")[0]), int(x.split("-")[1]) + 1) if isinstance(x, str) else [x])]
     
     # ---------------------------------------------------- Filter ----------------------------------------------------
+    print(f"Executing: prefiltering...")
     # 1. Interaction (intra- and inter- chain)
     analyzer = InteractionAnalyzer(structure_file=structure_file, chain_id=protein_chain_id)
     interaction_dict = analyzer.analyze()
@@ -74,10 +79,15 @@ def run_prefilters(
             lambda_J=basic_configs["evc_lambda_J"],
             cpu=basic_configs["evc_num_cpu"],
         )
-        conserverd_coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
+        # conserverd_coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
+        #     secondary_structure=ss,
+        #     conservation_threshold=basic_configs["conservation_threshold"],
+        #     evc_threshold=basic_configs["evc_coupling_threshold"],
+        # )
+        conserverd_sites, coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
             secondary_structure=ss,
-            conservation_threshold=basic_configs["conservation_threshold"],
-            evc_threshold=basic_configs["evc_coupling_threshold"],
+            conservation_threshold=conservation_threshold,
+            evc_threshold=evc_coupling_threshold,
         )
         conserverd_coupling_sites = conserverd_sites | coupling_sites
     else:
@@ -97,8 +107,10 @@ def run_prefilters(
     structure_unfav_sites = ppi_sites | intrachain_sites | hotspots_sites
     non_editable_regions = structure_unfav_sites | conserverd_coupling_sites | low_rsasa_sites
     editable_regions = set(list(range(1, len(query_sequence)+1))) - non_editable_regions
+    print(f"Done: prefiltering!")
     
     # ---------------------------------------------------- Ranker ----------------------------------------------------
+    print(f"Executing: Ranking...")
     results = []
     spired = Spired_funcs()
     saprot = SaProt_funcs()
@@ -219,5 +231,6 @@ def run_prefilters(
         output_html=f"{output_dir}/{filename}_prefilter_report{suffix}.html",
     )
     reporter.generate_prefilter_report()
+    print(f"Done: ranking!")
     
     return conservation_df, coupling_stength, interaction_dict, rsasa_index_dict

@@ -15,7 +15,7 @@ class SaProt_funcs:
 
         config = {
             "foldseek_path": None,
-            "config_path": "./SaProt/weights/PLMs",
+            "config_path": "/sdata2/WORK/Xuyi/sugarswitch/SaProt/weights/PLMs",
             "load_pretrained": True,
         }
         model = SaprotFoldseekMutationModel(**config)
@@ -49,7 +49,7 @@ class SaProt_funcs:
         plddt_threshold: float = None
     ) -> str:
         
-        parsed_seqs = get_struc_seq(foldseek="./SaProt/foldseek/foldseek", path=structure_file, chains=chain_id, plddt_mask=plddt_mask, plddt_threshold=plddt_threshold)[chain_id]
+        parsed_seqs = get_struc_seq(foldseek="/sdata2/WORK/Xuyi/sugarswitch/SaProt/foldseek/foldseek", path=structure_file, chains=chain_id, plddt_mask=plddt_mask, plddt_threshold=plddt_threshold)[chain_id]
         seq_strcut, seq_foldseek, _ = parsed_seqs
         seq_strcut_aligned = self.align_and_insert_gaps(query_seq, seq_strcut)
         seq_foldseek_iter = iter(seq_foldseek)

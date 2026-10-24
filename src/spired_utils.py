@@ -43,7 +43,7 @@ class Spired_funcs:
             stab_device=self.stab_device,
         )
         state_dict = torch.load(
-            "./Spired/model/SPIRED-Stab.pth",
+            "/sdata2/WORK/Xuyi/sugarswitch/Spired/model/SPIRED-Stab.pth",
             map_location="cpu",
         )
         model.load_state_dict(state_dict)
