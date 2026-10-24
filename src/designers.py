@@ -578,6 +578,7 @@ def halludesign_esm(
             })
 
     for i in range(num_patterns):
+        print(f"Designing pattern {i + 1}...")
         combination_id = i
         trial_times = [0] * num_gly_sites
         accepted_candidates = []
@@ -699,6 +700,7 @@ def halludesign_esm(
 
         for design_rank, candidate in enumerate(accepted_candidates):
             _store_design(candidate, i, design_rank)
+        print(f"Done: pattern {i + 1}!")
 
     reporter = designer_report(
         input_fasta_file=input_fasta_file,
