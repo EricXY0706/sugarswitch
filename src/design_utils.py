@@ -36,7 +36,7 @@ def sample_sites(
     structure_file: str,
     scoring_df: str,
     conservation_df: pd.DataFrame,
-    coupling_stength: np.array,
+    coupling_strength: np.array,
     interaction_dict: dict,
     rsasa_index_dict: dict,
     chain_id: str,
@@ -53,7 +53,7 @@ def sample_sites(
             center_site=s,
             wt_seq=wt_seq,
             conservation_df=conservation_df,
-            coupling_stength=coupling_stength,
+            coupling_strength=coupling_strength,
             interaction_dict=interaction_dict,
             rsasa_index_dict=rsasa_index_dict,
         )
@@ -136,7 +136,7 @@ def report_site_state(
     site: int,
     wt_seq: str,
     conservation_df: pd.DataFrame,
-    coupling_stength: np.array,
+    coupling_strength: np.array,
     interaction_dict: dict,
     rsasa_index_dict: dict,
 ):
@@ -148,8 +148,8 @@ def report_site_state(
             freq = conservation_df.loc[conservation_df["i"] == site, aa].values[0] <= 0.8
         else:
             freq = True
-        if coupling_stength is not None:
-            co_evo = coupling_stength[site-1] <= 1.0
+        if coupling_strength is not None:
+            co_evo = np.all(coupling_strength[site - 1] <= 1.0)
         else:
             co_evo = True
         
@@ -166,7 +166,7 @@ def report_four_sites_state(
     center_site: int,
     wt_seq: str,
     conservation_df: pd.DataFrame,
-    coupling_stength: np.array,
+    coupling_strength: np.array,
     interaction_dict: dict,
     rsasa_index_dict: dict,
 ):
@@ -183,7 +183,7 @@ def report_four_sites_state(
                 site=s, 
                 wt_seq=wt_seq, 
                 conservation_df=conservation_df,
-                coupling_stength=coupling_stength,
+                coupling_strength=coupling_strength,
                 interaction_dict=interaction_dict,
                 rsasa_index_dict=rsasa_index_dict,
             )
@@ -194,7 +194,7 @@ def add_single_mutation(
     site: int,
     wt_seq: str,
     conservation_df: pd.DataFrame,
-    coupling_stength: np.array,
+    coupling_strength: np.array,
     interaction_dict: dict,
     rsasa_index_dict: dict,
     N_minus_1_aa: str = "X",
@@ -334,7 +334,7 @@ def add_single_mutation(
         center_site=site,
         wt_seq=wt_seq,
         conservation_df=conservation_df,
-        coupling_stength=coupling_stength,
+        coupling_strength=coupling_strength,
         interaction_dict=interaction_dict,
         rsasa_index_dict=rsasa_index_dict,
     )
