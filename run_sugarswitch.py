@@ -54,7 +54,7 @@ def designer(input_fasta_file, input_structure_file, out_dir, name, suffix, chai
     from src.prefilters import run_prefilters
     from src.designers import halludesign_esm
     
-    conservation_df, coupling_stength, interaction_dict, rsasa_index_dict = run_prefilters(
+    conservation_df, coupling_strength, interaction_dict, rsasa_index_dict = run_prefilters(
         input_fasta_file=input_fasta_file,
         input_structure_file=input_structure_file,
         output_dir=out_dir, 
@@ -68,7 +68,7 @@ def designer(input_fasta_file, input_structure_file, out_dir, name, suffix, chai
         input_fasta_file=input_fasta_file,
         output_dir=out_dir,
         conservation_df=conservation_df,
-        coupling_stength=coupling_stength,
+        coupling_strength=coupling_strength,
         interaction_dict=interaction_dict,
         rsasa_index_dict=rsasa_index_dict,
         name=name,

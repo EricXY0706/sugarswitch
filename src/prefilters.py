@@ -60,7 +60,7 @@ def run_prefilters(
     # 2. Conservation and evolutionary coupling
     input_alignment_file = f"{output_dir}/msa/uniref_{aln_file_id}.a3m"
     conservation_df = None
-    coupling_stength = None
+    coupling_strength = None
     conserverd_sites = set()
     coupling_sites = set()
     if len(list(SeqIO.parse(input_alignment_file, "fasta"))) >= 10:
@@ -74,7 +74,7 @@ def run_prefilters(
             lambda_J=basic_configs["evc_lambda_J"],
             cpu=basic_configs["evc_num_cpu"],
         )
-        conserverd_coupling_sites, conservation_df, coupling_stength = evc.run_evc_filters(
+        conserverd_coupling_sites, conservation_df, coupling_strength = evc.run_evc_filters(
             secondary_structure=ss,
             conservation_threshold=basic_configs["conservation_threshold"],
             evc_threshold=basic_configs["evc_coupling_threshold"],
@@ -220,4 +220,4 @@ def run_prefilters(
     )
     reporter.generate_prefilter_report()
     
-    return conservation_df, coupling_stength, interaction_dict, rsasa_index_dict
+    return conservation_df, coupling_strength, interaction_dict, rsasa_index_dict
