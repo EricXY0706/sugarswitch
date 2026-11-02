@@ -19,7 +19,6 @@ Spired/model/SPIRED-Stab.pth
 *.out
 test*
 run.sh
-config_backup.py
 ESM-LoRA-Gly/data
 ESM-LoRA-Gly/checkpoints/O-linked
 ESM-LoRA-Gly/checkpoints/N-linked/ESM-3B
