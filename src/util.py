@@ -1262,7 +1262,7 @@ class InteractionAnalyzer:
             if chain != chain_id:
                 continue
             
-            if len(interactions) == 1 and "salt_bridge" not in interactions[0]["type"]:
+            if len(interactions) == 1 and "salt_bridge" not in interactions[0]["type"] and "disulfide_bond" not in interactions[0]["type"]:
                 continue
             
             for interaction in interactions:
