@@ -16,7 +16,6 @@ SaProt/weights/PLMs/vocab.txt
 SaProt/foldseek/foldseek
 Spired/model/SPIRED-Fitness.pth
 Spired/model/SPIRED-Stab.pth
-GVP_Bind/
 *.out
 test*
 run.sh
@@ -28,4 +27,5 @@ src/glycodesign_bb_hallucination.py
 nohup*
 *backup*
 src/*backup
-src/gvpbind_utils.py
+*copy*
+src/*copy*
